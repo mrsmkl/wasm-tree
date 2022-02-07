@@ -24,6 +24,7 @@ enum CodeTree {
     CAdd,
     CSub,
     CGt,
+    CEnd,
     CBreakIf (u32),
     CSetLocal (u32),
     CGetLocal (u32),
@@ -41,7 +42,7 @@ fn block_start(op: &Instruction) -> bool {
 fn find_end(code: &[Instruction]) -> &[Instruction] {
     let mut depth = 0;
     for (i, op) in code.iter().enumerate() {
-        println!("scanning {}", op);
+        // println!("scanning {}", op);
         if block_start(op) {
             depth = depth + 1;
         } else if *op == End && depth == 0{
@@ -56,7 +57,7 @@ fn find_end(code: &[Instruction]) -> &[Instruction] {
 fn process_code(code: &[Instruction]) -> Vec<CodeTree> {
     let mut res = vec![];
     for (i, op) in code.iter().enumerate() {
-        println!("op {}", op);
+        // println!("op {}", op);
         match &*op {
             Loop(_) => {
                 let cont = find_end(&code[i+1..]);
@@ -69,9 +70,23 @@ fn process_code(code: &[Instruction]) -> Vec<CodeTree> {
             SetLocal(x) => res.push(CSetLocal(*x as u32)),
             I32Const(x) => res.push(CConst(*x as u32)),
             BrIf(x) => res.push(CBreakIf(*x as u32)),
-            End => return res,
+            End => {
+                res.push(CEnd);
+                return res;
+            }
             _ => println!("Unknown op"),
         }
+    }
+    res
+}
+
+fn hash_list(params: &PoseidonParameters<Fr>, lst: &[Fr]) -> Fr {
+    let mut res = Fr::zero();
+    for elem in lst.iter().rev() {
+        let mut inputs = vec![];
+        inputs.push(elem.clone());
+        inputs.push(res);
+        res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
     }
     res
 }
@@ -79,7 +94,7 @@ fn process_code(code: &[Instruction]) -> Vec<CodeTree> {
 fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
     let mut res = Fr::zero();
     for op in code.iter().rev() {
-        println!("hashing {:?}", op);
+        // println!("hashing {:?}", op);
         match &*op {
             CAdd => {
                 let mut inputs = vec![];
@@ -96,6 +111,12 @@ fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
             CGt => {
                 let mut inputs = vec![];
                 inputs.push(Fr::from(3));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CEnd => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(9));
                 inputs.push(res);
                 res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
             }
@@ -169,10 +190,125 @@ fn generate_hash() -> PoseidonParameters<Fr> {
 
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+enum ControlFrame {
+    LoopFrame(Vec<CodeTree>, Vec<CodeTree>)
+}
+
+impl ControlFrame {
+    fn hash(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        match self {
+            ControlFrame::LoopFrame(a, b) => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(1));
+                inputs.push(hash_code(&params, &a));
+                inputs.push(hash_code(&params, &b));
+                CRH::<Fr>::evaluate(&params, inputs).unwrap()
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 struct VM {
     pub expr_stack : Vec<u32>,
-    pub control_stack: Vec<&[CodeTree]>,
-    pub pc: &[CodeTree],
+    pub locals : Vec<u32>,
+    pub control_stack: Vec<ControlFrame>,
+    pub pc: Vec<CodeTree>,
+}
+
+impl VM {
+    fn new(code: Vec<CodeTree>) -> Self {
+        VM {
+            pc: code,
+            expr_stack: vec![],
+            control_stack: vec![],
+            locals: vec![0; 10],
+        }
+    }
+    fn hash(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        let mut inputs = vec![];
+        inputs.push(hash_code(&params, &self.pc));
+        inputs.push(hash_list(&params, &self.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        inputs.push(hash_list(&params, &self.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        inputs.push(hash_list(&params, &self.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>()));
+        CRH::<Fr>::evaluate(&params, inputs).unwrap()
+    }
+
+    fn incr_pc(&mut self) {
+        self.pc = self.pc[1..].iter().map(|a| a.clone()).collect::<Vec<CodeTree>>();
+    }
+
+    fn step(&mut self) {
+        if self.pc.len() == 0 {
+            return
+        }
+        let elen = self.expr_stack.len();
+        let clen = self.control_stack.len();
+        match &self.pc[0] {
+            CAdd => {
+                let p1 = self.expr_stack[elen - 1];
+                let p2 = self.expr_stack[elen - 2];
+                self.expr_stack[elen - 2] = p1 + p2;
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CSub => {
+                let p1 = self.expr_stack[elen - 1];
+                let p2 = self.expr_stack[elen - 2];
+                self.expr_stack[elen - 2] = p2 - p1;
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CGt => {
+                let p1 = self.expr_stack[elen - 1];
+                let p2 = self.expr_stack[elen - 2];
+                let res = if p1 < p2 { 1 } else { 0 };
+                self.expr_stack[elen - 2] = res;
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CConst(a) => {
+                self.expr_stack.push(*a);
+                self.incr_pc()
+            }
+            CGetLocal(a) => {
+                self.expr_stack.push(self.locals[*a as usize]);
+                self.incr_pc()
+            }
+            CSetLocal(a) => {
+                self.locals[*a as usize] = self.expr_stack[elen - 1];
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CLoop(cont) => {
+                self.control_stack.push(ControlFrame::LoopFrame(cont.clone(), self.pc.clone()));
+                self.incr_pc()
+            }
+            CEnd => {
+                if clen == 0 {
+                    return
+                }
+                let ControlFrame::LoopFrame(c1, _) = self.control_stack[clen - 1].clone();
+                self.control_stack.pop();
+                self.pc = c1
+            }
+            CBreakIf(num) => {
+                let num = *num as usize;
+                let p1 = self.expr_stack[elen - 1];
+                self.expr_stack.pop();
+                if p1 == 1 {
+                    let ControlFrame::LoopFrame(_, c1) = self.control_stack[clen - 1 - num].clone();
+                    for _i in 0..=num {
+                        self.control_stack.pop();
+                    }
+                    self.pc = c1
+                } else {
+                    self.incr_pc()
+                }
+            }
+        }
+    } 
 }
 
 fn main() {
@@ -187,10 +323,17 @@ fn main() {
     let params = generate_hash();
 
     for f in code_section.bodies().iter() {
-        let res = process_code(f.code().elements());
-        println!("{:?}", res);
-        let res = hash_code(&params, &res);
+        let code = process_code(f.code().elements());
+        println!("{:?}", code);
+        let res = hash_code(&params, &code);
         println!("hash {}", res);
+        let mut vm = VM::new(code);
+        println!("vm init {}", vm.hash(&params));
+        for i in 0..10000 {
+            vm.step();
+            println!("{}: vm hash {}", i, vm.hash(&params));
+            // println!("vm state {:?}", vm);
+        }
     }
 
 }

@@ -1,7 +1,7 @@
 (module
     (func (export "main") (result i32)
       (local i32 i32 i32)
-        (local.set 1 (i32.const 100000))
+        (local.set 1 (i32.const 1000))
         (loop 
           (local.set 2 (i32.add (local.get 2) (local.get 1)))
           (local.set 1 (i32.sub (local.get 1) (i32.const 1)))
