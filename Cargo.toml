@@ -7,4 +7,7 @@ edition = "2021"
 
 [dependencies]
 parity-wasm = "0.42"
-
+ark-crypto-primitives = { path = "/home/sami/ark/crypto-primitives" }
+ark-std = "^0.3.0"
+ark-sponge = "^0.3.0"
+ark-bls12-377 = { version = "^0.3.0", features = [ "curve", "r1cs" ] }

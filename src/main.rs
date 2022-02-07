@@ -3,6 +3,12 @@ use parity_wasm::elements::Instruction::*;
 use parity_wasm::elements::*;
 use std::fs::File;
 use std::io::Read;
+use ark_crypto_primitives::crh::poseidon::{ /* TwoToOneCRH, */ CRH};
+use ark_sponge::poseidon::PoseidonParameters;
+use ark_bls12_377::Fr;
+use ark_std::UniformRand;
+use ark_std::Zero;
+use ark_crypto_primitives::CRHScheme;
 
 fn get_file(fname: String) -> Vec<u8> {
     let mut file = File::open(&fname).unwrap();
@@ -11,15 +17,16 @@ fn get_file(fname: String) -> Vec<u8> {
     buffer
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 enum CodeTree {
     CLoop (Vec<CodeTree>),
     CConst (u32),
     CAdd,
     CSub,
     CGt,
-    CBreakIf (usize),
-    CSetLocal (usize),
-    CGetLocal (usize),
+    CBreakIf (u32),
+    CSetLocal (u32),
+    CGetLocal (u32),
 }
 
 use CodeTree::*;
@@ -58,10 +65,10 @@ fn process_code(code: &[Instruction]) -> Vec<CodeTree> {
             I32Add => res.push(CAdd),
             I32Sub => res.push(CSub),
             I32GtU => res.push(CGt),
-            GetLocal(x) => res.push(CGetLocal(*x as usize)),
-            SetLocal(x) => res.push(CSetLocal(*x as usize)),
+            GetLocal(x) => res.push(CGetLocal(*x as u32)),
+            SetLocal(x) => res.push(CSetLocal(*x as u32)),
             I32Const(x) => res.push(CConst(*x as u32)),
-            BrIf(x) => res.push(CBreakIf(*x as usize)),
+            BrIf(x) => res.push(CBreakIf(*x as u32)),
             End => return res,
             _ => println!("Unknown op"),
         }
@@ -69,8 +76,97 @@ fn process_code(code: &[Instruction]) -> Vec<CodeTree> {
     res
 }
 
-fn process_function(func: &FuncBody) {
-    process_code(func.code().elements())
+fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
+    let mut res = Fr::zero();
+    for op in code.iter().rev() {
+        println!("hashing {:?}", op);
+        match &*op {
+            CAdd => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(1));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CSub => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(2));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CGt => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(3));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CGetLocal(x) => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(4));
+                inputs.push(Fr::from(*x));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CSetLocal(x) => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(5));
+                inputs.push(Fr::from(*x));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CConst(x) => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(6));
+                inputs.push(Fr::from(*x));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CBreakIf(x) => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(7));
+                inputs.push(Fr::from(*x));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CLoop(cont) => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(8));
+                inputs.push(hash_code(&params, cont));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+        }
+    }
+    res
+}
+
+fn generate_hash() -> PoseidonParameters<Fr> {
+    let mut test_rng = ark_std::test_rng();
+
+    // TODO: The following way of generating the MDS matrix is incorrect
+    // and is only for test purposes.
+
+    let mut mds = vec![vec![]; 3];
+    for i in 0..3 {
+        for _ in 0..3 {
+            mds[i].push(Fr::rand(&mut test_rng));
+        }
+    }
+
+    let mut ark = vec![vec![]; 8 + 24];
+    for i in 0..8 + 24 {
+        for _ in 0..3 {
+            ark[i].push(Fr::rand(&mut test_rng));
+        }
+    }
+
+    let mut test_a = Vec::new();
+    let mut test_b = Vec::new();
+    for _ in 0..3 {
+        test_a.push(Fr::rand(&mut test_rng));
+        test_b.push(Fr::rand(&mut test_rng));
+    }
+    PoseidonParameters::<Fr>::new(8, 24, 31, mds, ark)
+
 }
 
 fn main() {
@@ -82,8 +178,14 @@ fn main() {
 
     let code_section = module.code_section().unwrap(); // Part of the module with functions code
 
+    let params = generate_hash();
+
     for f in code_section.bodies().iter() {
-        process_code(f.code().elements());
+        let res = process_code(f.code().elements());
+        println!("{:?}", res);
+        let res = hash_code(&params, &res);
+        println!("hash {}", res);
     }
+
 }
 
