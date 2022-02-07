@@ -245,6 +245,13 @@ fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) {
         AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(p2))).unwrap(),
     );
 
+    let locals_var = FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(locals_hash)).unwrap(),
+    );
+    let control_var = FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(control_hash)).unwrap(),
+    );
+
     let mut inputs_pc = Vec::new();
     inputs_pc.push(FpVar::Constant(Fr::from(1)));
     inputs_pc.push(FpVar::Var(
@@ -270,6 +277,14 @@ fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) {
         AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
     ));
     let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
+
+    // Compute VM hash before
+    let mut inputs_vm_before = Vec::new();
+    inputs_vm_before.push(hash_pc_gadget);
+    inputs_vm_before.push(hash_stack_before_gadget);
+    inputs_vm_before.push(locals_var.clone());
+    inputs_vm_before.push(control_var.clone());
+    let hash_vm_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_before).unwrap();
 
 }
 
