@@ -4,11 +4,19 @@ use parity_wasm::elements::*;
 use std::fs::File;
 use std::io::Read;
 use ark_crypto_primitives::crh::poseidon::{ /* TwoToOneCRH, */ CRH};
+use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParametersVar};
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_bls12_377::Fr;
 use ark_std::UniformRand;
 use ark_std::Zero;
 use ark_crypto_primitives::CRHScheme;
+use ark_relations::r1cs::ConstraintSystem;
+use ark_r1cs_std::alloc::AllocVar;
+use ark_r1cs_std::{
+    fields::fp::{AllocatedFp, FpVar},
+    R1CSVar,
+};
+use ark_crypto_primitives::CRHSchemeGadget;
 
 fn get_file(fname: String) -> Vec<u8> {
     let mut file = File::open(&fname).unwrap();
@@ -217,6 +225,54 @@ struct VM {
     pub pc: Vec<CodeTree>,
 }
 
+fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) {
+    let pc_hash = hash_code(&params, &after.pc);
+    let stack_hash = hash_list(&params, &before.expr_stack[2..].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
+    let locals_hash = hash_list(&params, &before.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
+    let control_hash = hash_list(&params, &before.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>());
+
+    let elen = before.expr_stack.len();
+    let p1 = before.expr_stack[elen - 1];
+    let p2 = before.expr_stack[elen - 2];
+
+    let cs = ConstraintSystem::<Fr>::new_ref();
+    let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params)).unwrap();
+
+    let var_a = FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(p1))).unwrap(),
+    );
+    let var_b = FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(p2))).unwrap(),
+    );
+
+    let mut inputs_pc = Vec::new();
+    inputs_pc.push(FpVar::Constant(Fr::from(1)));
+    inputs_pc.push(FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
+    ));
+    let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
+
+    let mut inputs_stack_before2 = Vec::new();
+    inputs_stack_before2.push(var_b.clone());
+    inputs_stack_before2.push(FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
+    ));
+    let hash_stack_before2_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before2).unwrap();
+
+    let mut inputs_stack_before = Vec::new();
+    inputs_stack_before.push(var_a.clone());
+    inputs_stack_before.push(hash_stack_before2_gadget);
+    let hash_stack_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before).unwrap();
+
+    let mut inputs_stack_after = Vec::new();
+    inputs_stack_after.push(var_b.clone() + var_b.clone());
+    inputs_stack_after.push(FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
+    ));
+    let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
+
+}
+
 impl VM {
     fn new(code: Vec<CodeTree>) -> Self {
         VM {
@@ -329,7 +385,7 @@ fn main() {
         println!("hash {}", res);
         let mut vm = VM::new(code);
         println!("vm init {}", vm.hash(&params));
-        for i in 0..10000 {
+        for i in 0..20 {
             vm.step();
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
