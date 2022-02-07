@@ -169,6 +169,12 @@ fn generate_hash() -> PoseidonParameters<Fr> {
 
 }
 
+struct VM {
+    pub expr_stack : Vec<u32>,
+    pub control_stack: Vec<&[CodeTree]>,
+    pub pc: &[CodeTree],
+}
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
