@@ -70,7 +70,7 @@ fn process_code(code: &[Instruction]) -> Vec<CodeTree> {
 }
 
 fn process_function(func: &FuncBody) {
-    process_code(func.code().elements());
+    process_code(func.code().elements())
 }
 
 fn main() {
@@ -83,7 +83,7 @@ fn main() {
     let code_section = module.code_section().unwrap(); // Part of the module with functions code
 
     for f in code_section.bodies().iter() {
-        process_function(&f);
+        process_code(f.code().elements());
     }
 }
 
