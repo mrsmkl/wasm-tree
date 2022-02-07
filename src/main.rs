@@ -225,7 +225,7 @@ struct VM {
     pub pc: Vec<CodeTree>,
 }
 
-fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) {
+fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) -> FpVar<Fr> {
     let pc_hash = hash_code(&params, &after.pc);
     let stack_hash = hash_list(&params, &before.expr_stack[2..].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
     let locals_hash = hash_list(&params, &before.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
@@ -252,12 +252,19 @@ fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) {
         AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(control_hash)).unwrap(),
     );
 
+    let hash_pc_after_var = FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
+    );
+
     let mut inputs_pc = Vec::new();
     inputs_pc.push(FpVar::Constant(Fr::from(1)));
-    inputs_pc.push(FpVar::Var(
-        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
-    ));
+    inputs_pc.push(hash_pc_after_var.clone());
     let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
+
+    /*
+    println!("pc hash {}", before.hash(&params));
+    println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+    */
 
     let mut inputs_stack_before2 = Vec::new();
     inputs_stack_before2.push(var_b.clone());
@@ -286,6 +293,24 @@ fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) {
     inputs_vm_before.push(control_var.clone());
     let hash_vm_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_before).unwrap();
 
+    // Compute VM hash after
+    let mut inputs_vm_after = Vec::new();
+    inputs_vm_after.push(hash_pc_after_var);
+    inputs_vm_after.push(hash_stack_after_gadget);
+    inputs_vm_after.push(locals_var.clone());
+    inputs_vm_after.push(control_var.clone());
+    let hash_vm_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_after).unwrap();
+
+    let mut inputs_transition = Vec::new();
+    inputs_transition.push(hash_vm_before_gadget.clone());
+    inputs_transition.push(hash_vm_after_gadget.clone());
+    let hash_transition_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_transition).unwrap();
+
+    println!("Made circuit");
+    println!("before {}, after {}", before.hash(&params), after.hash(&params));
+    println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+
+    hash_transition_gadget
 }
 
 impl VM {
@@ -310,7 +335,7 @@ impl VM {
         self.pc = self.pc[1..].iter().map(|a| a.clone()).collect::<Vec<CodeTree>>();
     }
 
-    fn step(&mut self) {
+    fn step(&mut self, params: &PoseidonParameters<Fr>) {
         if self.pc.len() == 0 {
             return
         }
@@ -318,11 +343,14 @@ impl VM {
         let clen = self.control_stack.len();
         match &self.pc[0] {
             CAdd => {
+                let before = self.clone();
                 let p1 = self.expr_stack[elen - 1];
                 let p2 = self.expr_stack[elen - 2];
                 self.expr_stack[elen - 2] = p1 + p2;
                 self.expr_stack.pop();
-                self.incr_pc()
+                self.incr_pc();
+                let after = self.clone();
+                let _ = add_circuit(&params, before, after);
             }
             CSub => {
                 let p1 = self.expr_stack[elen - 1];
@@ -401,7 +429,7 @@ fn main() {
         let mut vm = VM::new(code);
         println!("vm init {}", vm.hash(&params));
         for i in 0..20 {
-            vm.step();
+            vm.step(&params);
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
