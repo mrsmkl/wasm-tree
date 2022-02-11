@@ -1,4 +1,3 @@
-
 use parity_wasm::elements::Instruction::*;
 use parity_wasm::elements::*;
 use std::fs::File;
@@ -224,6 +223,122 @@ struct VM {
     pub control_stack: Vec<ControlFrame>,
     pub pc: Vec<CodeTree>,
 }
+
+struct Circuit<Fr> {
+    before: VM,
+    after: VM,
+    params: PoseidonParameters<Fr>,
+}
+
+impl<Fr: Field> ConstraintSynthesizer<Fr> for Circuit<Fr> {
+    fn generate_constraints(
+        self,
+        cs: ConstraintSystemRef<Fr>,
+    ) -> Result<(), SynthesisError> {
+        let before = self.before.clone();
+        let after = self.after.clone();
+        let params = self.params.clone();
+
+        println!("before {:?}", before);
+        println!("after {:?}", after);
+    
+        let elen = before.expr_stack.len();
+    
+        let pc_hash = hash_code(&params, &after.pc);
+        let stack_hash = hash_list(&params, &before.expr_stack[..elen-2].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
+        let locals_hash = hash_list(&params, &before.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
+        let control_hash = hash_list(&params, &before.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>());
+
+        let p1 = before.expr_stack[elen - 1];
+        let p2 = before.expr_stack[elen - 2];
+    
+        println!("p1 {}, p2 {}", p1, p2);
+    
+        let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params)).unwrap();
+    
+        let var_a = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(p1))).unwrap(),
+        );
+        let var_b = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(p2))).unwrap(),
+        );
+    
+        let locals_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(locals_hash)).unwrap(),
+        );
+        let control_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(control_hash)).unwrap(),
+        );
+    
+        let hash_pc_after_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
+        );
+    
+        let mut inputs_pc = Vec::new();
+        inputs_pc.push(FpVar::Constant(Fr::from(1)));
+        inputs_pc.push(hash_pc_after_var.clone());
+        let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
+    
+        println!("pc hash {}", hash_code(&params, &before.pc));
+        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+    
+        let mut inputs_stack_before2 = Vec::new();
+        inputs_stack_before2.push(var_b.clone());
+        inputs_stack_before2.push(FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
+        ));
+        let hash_stack_before2_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before2).unwrap();
+    
+        println!("stack before2 {}", hash_list(&params, &before.expr_stack[..elen-1].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        println!("stack before2 {}", hash_stack_before2_gadget.value().unwrap());
+    
+        let mut inputs_stack_before = Vec::new();
+        inputs_stack_before.push(var_a.clone());
+        inputs_stack_before.push(hash_stack_before2_gadget);
+        let hash_stack_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before).unwrap();
+    
+        println!("stack before {}", hash_list(&params, &before.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
+    
+        let mut inputs_stack_after = Vec::new();
+        inputs_stack_after.push(var_a.clone() + var_b.clone());
+        inputs_stack_after.push(FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
+        ));
+        let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
+    
+        println!("stack after {}", hash_list(&params, &after.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
+    
+        // Compute VM hash before
+        let mut inputs_vm_before = Vec::new();
+        inputs_vm_before.push(hash_pc_gadget);
+        inputs_vm_before.push(hash_stack_before_gadget);
+        inputs_vm_before.push(locals_var.clone());
+        inputs_vm_before.push(control_var.clone());
+        let hash_vm_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_before).unwrap();
+    
+        // Compute VM hash after
+        let mut inputs_vm_after = Vec::new();
+        inputs_vm_after.push(hash_pc_after_var);
+        inputs_vm_after.push(hash_stack_after_gadget);
+        inputs_vm_after.push(locals_var.clone());
+        inputs_vm_after.push(control_var.clone());
+        let hash_vm_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_after).unwrap();
+    
+        let mut inputs_transition = Vec::new();
+        inputs_transition.push(hash_vm_before_gadget.clone());
+        inputs_transition.push(hash_vm_after_gadget.clone());
+        let hash_transition_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_transition).unwrap();
+    
+        println!("Made circuit");
+        println!("before {}, after {}", before.hash(&params), after.hash(&params));
+        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+
+        Ok(())
+    }
+}
+
 
 fn add_circuit(params: &PoseidonParameters<Fr>, before: VM, after: VM) -> FpVar<Fr> {
 

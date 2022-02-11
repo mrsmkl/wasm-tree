@@ -13,3 +13,4 @@ ark-sponge = "^0.3.0"
 ark-bls12-377 = { version = "^0.3.0", features = [ "curve", "r1cs" ] }
 ark-relations = "^0.3.0"
 ark-r1cs-std = "^0.3.0"
+ark-groth16 = { version = "^0.3.0", features = [ "r1cs" ] }
