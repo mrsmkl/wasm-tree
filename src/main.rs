@@ -30,6 +30,8 @@ use ark_mnt6_298::Fr as MNT6Fr;
 use ark_groth16::Groth16;
 use ark_groth16::constraints::Groth16VerifierGadget;
 use ark_std::test_rng;
+use ark_crypto_primitives::SNARK;
+use ark_crypto_primitives::CircuitSpecificSetupSNARK;
 
 trait HashField : Absorb + PrimeField {
 }
@@ -461,8 +463,14 @@ type InnerSNARK = Groth16<MNT4PairingEngine>;
 type InnerSNARKGadget = Groth16VerifierGadget<MNT4PairingEngine, MNT4PairingVar>;
 
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
-    let first = a[0].clone();
     let mut rng = test_rng();
+    let (pk, vk) = InnerSNARK::setup(a[0].clone(), &mut rng).unwrap();
+    let proof1 = InnerSNARK::prove(&pk, a[0].clone(), &mut rng).unwrap();
+    let proof2 = InnerSNARK::prove(&pk, a[1].clone(), &mut rng).unwrap();
+
+    println!("proof1: {}", InnerSNARK::verify(&vk, &vec![], &proof1).unwrap());
+    println!("proof2: {}", InnerSNARK::verify(&vk, &vec![], &proof2).unwrap());
+
 }
 
 fn main() {
@@ -489,6 +497,7 @@ fn main() {
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
+        handle_recursive_groth(adds)
     }
 
 }
