@@ -278,6 +278,107 @@ struct VM {
     pub pc: Vec<CodeTree>,
 }
 
+impl VM {
+    fn new(code: Vec<CodeTree>) -> Self {
+        VM {
+            pc: code,
+            expr_stack: vec![],
+            control_stack: vec![],
+            locals: vec![0; 10],
+        }
+    }
+    fn hash(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        let mut inputs = vec![];
+        inputs.push(hash_code(&params, &self.pc));
+        inputs.push(hash_list(&params, &self.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        inputs.push(hash_list(&params, &self.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+        inputs.push(hash_list(&params, &self.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>()));
+        CRH::<Fr>::evaluate(&params, inputs).unwrap()
+    }
+
+    fn incr_pc(&mut self) {
+        self.pc = self.pc[1..].iter().map(|a| a.clone()).collect::<Vec<CodeTree>>();
+    }
+
+    fn step(&mut self, params: &PoseidonParameters<Fr>, adds : &mut Vec<AddCircuit>) {
+        if self.pc.len() == 0 {
+            return
+        }
+        let elen = self.expr_stack.len();
+        let clen = self.control_stack.len();
+        match &self.pc[0] {
+            CAdd => {
+                let before = self.clone();
+                let p1 = self.expr_stack[elen - 1];
+                let p2 = self.expr_stack[elen - 2];
+                self.expr_stack[elen - 2] = p1 + p2;
+                self.expr_stack.pop();
+                self.incr_pc();
+                let after = self.clone();
+                adds.push(AddCircuit{
+                    before,
+                    after,
+                    params: params.clone(),
+                })
+            }
+            CSub => {
+                let p1 = self.expr_stack[elen - 1];
+                let p2 = self.expr_stack[elen - 2];
+                self.expr_stack[elen - 2] = p2 - p1;
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CGt => {
+                let p1 = self.expr_stack[elen - 1];
+                let p2 = self.expr_stack[elen - 2];
+                let res = if p1 < p2 { 1 } else { 0 };
+                self.expr_stack[elen - 2] = res;
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CConst(a) => {
+                self.expr_stack.push(*a);
+                self.incr_pc()
+            }
+            CGetLocal(a) => {
+                self.expr_stack.push(self.locals[*a as usize]);
+                self.incr_pc()
+            }
+            CSetLocal(a) => {
+                self.locals[*a as usize] = self.expr_stack[elen - 1];
+                self.expr_stack.pop();
+                self.incr_pc()
+            }
+            CLoop(cont) => {
+                self.control_stack.push(ControlFrame::LoopFrame(cont.clone(), self.pc.clone()));
+                self.incr_pc()
+            }
+            CEnd => {
+                if clen == 0 {
+                    return
+                }
+                let ControlFrame::LoopFrame(c1, _) = self.control_stack[clen - 1].clone();
+                self.control_stack.pop();
+                self.pc = c1
+            }
+            CBreakIf(num) => {
+                let num = *num as usize;
+                let p1 = self.expr_stack[elen - 1];
+                self.expr_stack.pop();
+                if p1 == 1 {
+                    let ControlFrame::LoopFrame(_, c1) = self.control_stack[clen - 1 - num].clone();
+                    for _i in 0..=num {
+                        self.control_stack.pop();
+                    }
+                    self.pc = c1
+                } else {
+                    self.incr_pc()
+                }
+            }
+        }
+    } 
+}
+
 #[derive(Debug, Clone)]
 struct AddCircuit {
     before: VM,
@@ -407,105 +508,44 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
     }
 }
 
-impl VM {
-    fn new(code: Vec<CodeTree>) -> Self {
-        VM {
-            pc: code,
-            expr_stack: vec![],
-            control_stack: vec![],
-            locals: vec![0; 10],
-        }
-    }
-    fn hash(&self, params: &PoseidonParameters<Fr>) -> Fr {
+#[derive(Debug, Clone)]
+struct HashCircuit {
+    a : Fr,
+    b : Fr,
+    params: PoseidonParameters<Fr>,
+}
+
+impl HashCircuit {
+    fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
-        inputs.push(hash_code(&params, &self.pc));
-        inputs.push(hash_list(&params, &self.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        inputs.push(hash_list(&params, &self.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        inputs.push(hash_list(&params, &self.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>()));
-        CRH::<Fr>::evaluate(&params, inputs).unwrap()
+        inputs.push(self.a.clone());
+        inputs.push(self.b.clone());
+        CRH::<Fr>::evaluate(&self.params, inputs).unwrap()
     }
+}
 
-    fn incr_pc(&mut self) {
-        self.pc = self.pc[1..].iter().map(|a| a.clone()).collect::<Vec<CodeTree>>();
+impl ConstraintSynthesizer<Fr> for HashCircuit {
+    fn generate_constraints(
+        self,
+        cs: ConstraintSystemRef<Fr>,
+    ) -> Result<(), SynthesisError> {
+        let a_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.a)).unwrap(),
+        );
+        let b_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.b)).unwrap(),
+        );
+        let c_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.calc_hash())).unwrap(),
+        );
+        let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(self.params.clone())).unwrap();
+        let mut inputs = Vec::new();
+        inputs.push(a_var.clone());
+        inputs.push(b_var.clone());
+        let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs).unwrap();
+        hash_gadget.enforce_equal(&c_var);
+        Ok(())
     }
-
-    fn step(&mut self, params: &PoseidonParameters<Fr>, adds : &mut Vec<AddCircuit>) {
-        if self.pc.len() == 0 {
-            return
-        }
-        let elen = self.expr_stack.len();
-        let clen = self.control_stack.len();
-        match &self.pc[0] {
-            CAdd => {
-                let before = self.clone();
-                let p1 = self.expr_stack[elen - 1];
-                let p2 = self.expr_stack[elen - 2];
-                self.expr_stack[elen - 2] = p1 + p2;
-                self.expr_stack.pop();
-                self.incr_pc();
-                let after = self.clone();
-                adds.push(AddCircuit{
-                    before,
-                    after,
-                    params: params.clone(),
-                })
-            }
-            CSub => {
-                let p1 = self.expr_stack[elen - 1];
-                let p2 = self.expr_stack[elen - 2];
-                self.expr_stack[elen - 2] = p2 - p1;
-                self.expr_stack.pop();
-                self.incr_pc()
-            }
-            CGt => {
-                let p1 = self.expr_stack[elen - 1];
-                let p2 = self.expr_stack[elen - 2];
-                let res = if p1 < p2 { 1 } else { 0 };
-                self.expr_stack[elen - 2] = res;
-                self.expr_stack.pop();
-                self.incr_pc()
-            }
-            CConst(a) => {
-                self.expr_stack.push(*a);
-                self.incr_pc()
-            }
-            CGetLocal(a) => {
-                self.expr_stack.push(self.locals[*a as usize]);
-                self.incr_pc()
-            }
-            CSetLocal(a) => {
-                self.locals[*a as usize] = self.expr_stack[elen - 1];
-                self.expr_stack.pop();
-                self.incr_pc()
-            }
-            CLoop(cont) => {
-                self.control_stack.push(ControlFrame::LoopFrame(cont.clone(), self.pc.clone()));
-                self.incr_pc()
-            }
-            CEnd => {
-                if clen == 0 {
-                    return
-                }
-                let ControlFrame::LoopFrame(c1, _) = self.control_stack[clen - 1].clone();
-                self.control_stack.pop();
-                self.pc = c1
-            }
-            CBreakIf(num) => {
-                let num = *num as usize;
-                let p1 = self.expr_stack[elen - 1];
-                self.expr_stack.pop();
-                if p1 == 1 {
-                    let ControlFrame::LoopFrame(_, c1) = self.control_stack[clen - 1 - num].clone();
-                    for _i in 0..=num {
-                        self.control_stack.pop();
-                    }
-                    self.pc = c1
-                } else {
-                    self.incr_pc()
-                }
-            }
-        }
-    } 
 }
 
 type InnerSNARK = Groth16<MNT4PairingEngine>;
@@ -513,15 +553,31 @@ type InnerSNARKGadget = Groth16VerifierGadget<MNT4PairingEngine, MNT4PairingVar>
 
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let mut rng = test_rng();
-    let (pk, vk) = InnerSNARK::setup(a[0].clone(), &mut rng).unwrap();
-    let proof1 = InnerSNARK::prove(&pk, a[0].clone(), &mut rng).unwrap();
-    let proof2 = InnerSNARK::prove(&pk, a[1].clone(), &mut rng).unwrap();
 
     let hash1 = a[0].calc_hash();
     let hash2 = a[1].calc_hash();
 
+    let hash_circuit = HashCircuit {
+        a: hash1,
+        b: hash2,
+        params: a[0].params.clone(),
+    };
+
+    let (pk, vk) = InnerSNARK::setup(a[0].clone(), &mut rng).unwrap();
+    let (hash_pk, hash_vk) = InnerSNARK::setup(hash_circuit.clone(), &mut rng).unwrap();
+
+    let proof1 = InnerSNARK::prove(&pk, a[0].clone(), &mut rng).unwrap();
+    let proof2 = InnerSNARK::prove(&pk, a[1].clone(), &mut rng).unwrap();
+    let proof_hash = InnerSNARK::prove(&hash_pk, hash_circuit.clone(), &mut rng).unwrap();
+
+    let hash3 = hash_circuit.calc_hash();
+
     println!("proof1: {}", InnerSNARK::verify(&vk, &vec![hash1.clone()], &proof1).unwrap());
     println!("proof2: {}", InnerSNARK::verify(&vk, &vec![hash2.clone()], &proof2).unwrap());
+    println!(
+        "proof hash: {}",
+        InnerSNARK::verify(&hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
+    );
 
     let cs_sys = ConstraintSystem::<MNT6Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
@@ -538,6 +594,12 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
         InnerSNARK,
     >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![hash2.clone()]))
     .unwrap();
+    let input_hash_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![hash1.clone(), hash2.clone(), hash3.clone()]))
+    .unwrap();
     let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
         <MNT4PairingEngine as PairingEngine>::Fq,
@@ -550,11 +612,23 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
         InnerSNARK,
     >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(proof2))
     .unwrap();
+    let proof_hash_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(proof_hash))
+    .unwrap();
     let vk_gadget = <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
         <MNT4PairingEngine as PairingEngine>::Fq,
         InnerSNARK,
     >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), vk.clone())
+    .unwrap();
+    let hash_vk_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_hash_vk"), hash_vk.clone())
     .unwrap();
     <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
@@ -565,6 +639,10 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     .enforce_equal(&Boolean::constant(true))
     .unwrap();
     InnerSNARKGadget::verify(&vk_gadget, &input2_gadget, &proof2_gadget)
+    .unwrap()
+    .enforce_equal(&Boolean::constant(true))
+    .unwrap();
+    InnerSNARKGadget::verify(&hash_vk_gadget, &input_hash_gadget, &proof_hash_gadget)
     .unwrap()
     .enforce_equal(&Boolean::constant(true))
     .unwrap();
