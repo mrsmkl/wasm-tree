@@ -582,6 +582,12 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let cs_sys = ConstraintSystem::<MNT6Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
 
+    let public_var = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::InputVar::new_input(ns!(cs, "public_input"), || Ok(vec![hash3.clone()])).unwrap();
+
     let input1_gadget = <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
         <MNT4PairingEngine as PairingEngine>::Fq,
@@ -600,6 +606,16 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
         InnerSNARK,
     >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![hash1.clone(), hash2.clone(), hash3.clone()]))
     .unwrap();
+
+    let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
+    let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
+    let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
+    let input_hash_bool_vec = input_hash_gadget.clone().into_iter().collect::<Vec<_>>();
+
+    input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0]);
+    input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1]);
+    input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2]);
+
     let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
         <MNT4PairingEngine as PairingEngine>::Fq,
