@@ -41,26 +41,6 @@ dependencies = [
  "blake2",
  "derivative",
  "digest",
- "tracing",
-]
-
-[[package]]
-name = "ark-crypto-primitives"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff773c0ef8c655c98071d3026a63950798a66b2f45baef22d8334c1756f1bd18"
-dependencies = [
- "ark-ec",
- "ark-ff",
- "ark-nonnative-field",
- "ark-r1cs-std",
- "ark-relations",
- "ark-serialize",
- "ark-snark",
- "ark-std",
- "blake2",
- "derivative",
- "digest",
  "rayon",
  "tracing",
 ]
@@ -124,10 +104,8 @@ dependencies = [
 [[package]]
 name = "ark-groth16"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f8fff7468e947130b5caf9bdd27de8b913cf30e15104b4f0cd301726b3d897"
 dependencies = [
- "ark-crypto-primitives 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ark-crypto-primitives",
  "ark-ec",
  "ark-ff",
  "ark-poly",
@@ -760,7 +738,8 @@ name = "wasm_test"
 version = "0.1.0"
 dependencies = [
  "ark-bls12-377",
- "ark-crypto-primitives 0.3.0",
+ "ark-crypto-primitives",
+ "ark-ec",
  "ark-ff",
  "ark-groth16",
  "ark-mnt4-298",

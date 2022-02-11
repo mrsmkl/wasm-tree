@@ -32,6 +32,11 @@ use ark_groth16::constraints::Groth16VerifierGadget;
 use ark_std::test_rng;
 use ark_crypto_primitives::SNARK;
 use ark_crypto_primitives::CircuitSpecificSetupSNARK;
+use ark_r1cs_std::boolean::Boolean;
+use ark_relations::ns;
+use ark_ec::PairingEngine;
+use ark_crypto_primitives::snark::constraints::SNARKGadget;
+use ark_r1cs_std::eq::EqGadget;
 
 trait HashField : Absorb + PrimeField {
 }
@@ -216,6 +221,36 @@ fn generate_hash() -> PoseidonParameters<Fr> {
 
 }
 
+fn generate_outer_hash() -> PoseidonParameters<MNT6Fr> {
+    let mut test_rng = ark_std::test_rng();
+
+    // TODO: The following way of generating the MDS matrix is incorrect
+    // and is only for test purposes.
+
+    let mut mds = vec![vec![]; 3];
+    for i in 0..3 {
+        for _ in 0..3 {
+            mds[i].push(MNT6Fr::rand(&mut test_rng));
+        }
+    }
+
+    let mut ark = vec![vec![]; 8 + 24];
+    for i in 0..8 + 24 {
+        for _ in 0..3 {
+            ark[i].push(MNT6Fr::rand(&mut test_rng));
+        }
+    }
+
+    let mut test_a = Vec::new();
+    let mut test_b = Vec::new();
+    for _ in 0..3 {
+        test_a.push(MNT6Fr::rand(&mut test_rng));
+        test_b.push(MNT6Fr::rand(&mut test_rng));
+    }
+    PoseidonParameters::<MNT6Fr>::new(8, 24, 31, mds, ark)
+
+}
+
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 enum ControlFrame {
     LoopFrame(Vec<CodeTree>, Vec<CodeTree>)
@@ -299,7 +334,7 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
         println!("pc hash {}", hash_code(&self.params, &before.pc));
-        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+//        println!("pc hash {}", hash_pc_gadget.value().unwrap());
     
         let mut inputs_stack_before2 = Vec::new();
         inputs_stack_before2.push(var_b.clone());
@@ -309,7 +344,7 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
         let hash_stack_before2_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before2).unwrap();
     
         println!("stack before2 {}", hash_list(&self.params, &before.expr_stack[..elen-1].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        println!("stack before2 {}", hash_stack_before2_gadget.value().unwrap());
+//        println!("stack before2 {}", hash_stack_before2_gadget.value().unwrap());
     
         let mut inputs_stack_before = Vec::new();
         inputs_stack_before.push(var_a.clone());
@@ -317,7 +352,7 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
         let hash_stack_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before).unwrap();
     
         println!("stack before {}", hash_list(&self.params, &before.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
+//        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
     
         let mut inputs_stack_after = Vec::new();
         inputs_stack_after.push(var_a.clone() + var_b.clone());
@@ -327,8 +362,8 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
         let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
     
         println!("stack after {}", hash_list(&self.params, &after.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
-    
+//        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
+
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
         inputs_vm_before.push(hash_pc_gadget);
@@ -344,7 +379,7 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
         inputs_vm_after.push(locals_var.clone());
         inputs_vm_after.push(control_var.clone());
         let hash_vm_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_after).unwrap();
-    
+
         let mut inputs_transition = Vec::new();
         inputs_transition.push(hash_vm_before_gadget.clone());
         inputs_transition.push(hash_vm_after_gadget.clone());
@@ -352,7 +387,7 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+//        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }
@@ -470,6 +505,56 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
 
     println!("proof1: {}", InnerSNARK::verify(&vk, &vec![], &proof1).unwrap());
     println!("proof2: {}", InnerSNARK::verify(&vk, &vec![], &proof2).unwrap());
+
+    let cs_sys = ConstraintSystem::<MNT6Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+
+    let input1_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![]))
+    .unwrap();
+    let input2_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![]))
+    .unwrap();
+    let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(proof1))
+    .unwrap();
+    let proof2_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(proof2))
+    .unwrap();
+    let vk_gadget = <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), vk.clone())
+    .unwrap();
+    <InnerSNARKGadget as SNARKGadget<
+        <MNT4PairingEngine as PairingEngine>::Fr,
+        <MNT4PairingEngine as PairingEngine>::Fq,
+        InnerSNARK,
+    >>::verify(&vk_gadget, &input1_gadget, &proof1_gadget)
+    .unwrap()
+    .enforce_equal(&Boolean::constant(true))
+    .unwrap();
+    InnerSNARKGadget::verify(&vk_gadget, &input2_gadget, &proof2_gadget)
+    .unwrap()
+    .enforce_equal(&Boolean::constant(true))
+    .unwrap();
+
+    println!("Working: {}", cs.is_satisfied().unwrap());
+
+    println!("recursive circuit has {} constraints", cs.num_constraints());
 
 }
 
