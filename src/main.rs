@@ -285,6 +285,15 @@ struct AddCircuit {
     params: PoseidonParameters<Fr>,
 }
 
+impl AddCircuit {
+    fn calc_hash(&self) -> Fr {
+        let mut inputs = vec![];
+        inputs.push(self.before.hash(&self.params));
+        inputs.push(self.after.hash(&self.params));
+        CRH::<Fr>::evaluate(&self.params, inputs).unwrap()
+    }
+}
+
 impl ConstraintSynthesizer<Fr> for AddCircuit {
     fn generate_constraints(
         self,
@@ -305,6 +314,10 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
 
         let p1 = before.expr_stack[elen - 1];
         let p2 = before.expr_stack[elen - 2];
+
+        let public_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.calc_hash())).unwrap(),
+        );
     
         println!("p1 {}, p2 {}", p1, p2);
     
@@ -384,6 +397,7 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
         inputs_transition.push(hash_vm_before_gadget.clone());
         inputs_transition.push(hash_vm_after_gadget.clone());
         let hash_transition_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_transition).unwrap();
+        hash_transition_gadget.enforce_equal(&public_var);
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
@@ -503,8 +517,11 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let proof1 = InnerSNARK::prove(&pk, a[0].clone(), &mut rng).unwrap();
     let proof2 = InnerSNARK::prove(&pk, a[1].clone(), &mut rng).unwrap();
 
-    println!("proof1: {}", InnerSNARK::verify(&vk, &vec![], &proof1).unwrap());
-    println!("proof2: {}", InnerSNARK::verify(&vk, &vec![], &proof2).unwrap());
+    let hash1 = a[0].calc_hash();
+    let hash2 = a[1].calc_hash();
+
+    println!("proof1: {}", InnerSNARK::verify(&vk, &vec![hash1.clone()], &proof1).unwrap());
+    println!("proof2: {}", InnerSNARK::verify(&vk, &vec![hash2.clone()], &proof2).unwrap());
 
     let cs_sys = ConstraintSystem::<MNT6Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
@@ -513,13 +530,13 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
         <MNT4PairingEngine as PairingEngine>::Fr,
         <MNT4PairingEngine as PairingEngine>::Fq,
         InnerSNARK,
-    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![]))
+    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![hash1.clone()]))
     .unwrap();
     let input2_gadget = <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
         <MNT4PairingEngine as PairingEngine>::Fq,
         InnerSNARK,
-    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![]))
+    >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![hash2.clone()]))
     .unwrap();
     let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
         <MNT4PairingEngine as PairingEngine>::Fr,
