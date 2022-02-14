@@ -18,6 +18,7 @@ use ark_r1cs_std::{
 use ark_crypto_primitives::CRHSchemeGadget;
 use ark_relations::r1cs::ConstraintSystemRef;
 use ark_relations::r1cs::SynthesisError;
+use ark_ff::BigInteger;
 use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_relations::r1cs::Field;
 use ark_ff::PrimeField;
@@ -26,7 +27,11 @@ use ark_sponge::Absorb;
 use ark_mnt4_298::{
     constraints::PairingVar as MNT4PairingVar, Fr, MNT4_298 as MNT4PairingEngine,
 };
-use ark_mnt6_298::Fr as MNT6Fr;
+use ark_mnt6_298::{
+    Fr as MNT6Fr,
+    constraints::PairingVar as MNT6PairingVar, MNT6_298 as MNT6PairingEngine,
+};
+use ark_ec::mnt4::MNT4;
 use ark_groth16::Groth16;
 use ark_groth16::constraints::Groth16VerifierGadget;
 use ark_std::test_rng;
@@ -37,6 +42,9 @@ use ark_relations::ns;
 use ark_ec::PairingEngine;
 use ark_crypto_primitives::snark::constraints::SNARKGadget;
 use ark_r1cs_std::eq::EqGadget;
+use ark_groth16::Proof;
+use ark_groth16::VerifyingKey;
+use ark_std::One;
 
 trait HashField : Absorb + PrimeField {
 }
@@ -549,7 +557,120 @@ impl ConstraintSynthesizer<Fr> for HashCircuit {
 }
 
 type InnerSNARK = Groth16<MNT4PairingEngine>;
+type InnerSNARKProof = Proof<MNT4PairingEngine>;
+type InnerSNARKVK = VerifyingKey<MNT4PairingEngine>;
 type InnerSNARKGadget = Groth16VerifierGadget<MNT4PairingEngine, MNT4PairingVar>;
+
+type OuterSNARK = Groth16<MNT6PairingEngine>;
+type OuterSNARKGadget = Groth16VerifierGadget<MNT6PairingEngine, MNT6PairingVar>;
+
+#[derive(Debug, Clone)]
+struct InnerAggregationCircuit {
+    a : Fr,
+    b : Fr,
+    c : Fr,
+    proof1: InnerSNARKProof,
+    proof2: InnerSNARKProof,
+    proof_hash: InnerSNARKProof,
+    vk: InnerSNARKVK,
+    hash_vk: InnerSNARKVK,
+}
+
+impl ConstraintSynthesizer<MNT6Fr> for InnerAggregationCircuit {
+    fn generate_constraints(
+        self,
+        cs: ConstraintSystemRef<MNT6Fr>,
+    ) -> Result<(), SynthesisError> {
+        let public_var = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_input(ns!(cs, "public_input"), || Ok(vec![self.c.clone()])).unwrap();
+
+        let input1_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.a.clone()]))
+        .unwrap();
+        let input2_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.b.clone()]))
+        .unwrap();
+        let input_hash_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.a.clone(), self.b.clone(), self.c.clone()]))
+        .unwrap();
+
+        let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
+        let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
+        let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
+        let input_hash_bool_vec = input_hash_gadget.clone().into_iter().collect::<Vec<_>>();
+
+        println!("Input vecs {} {} {}", input1_bool_vec[0].len(), input2_bool_vec[0].len(), input3_bool_vec[0].len());
+
+        input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0]);
+        input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1]);
+        input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2]);
+
+        let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof1))
+        .unwrap();
+        let proof2_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof2))
+        .unwrap();
+        let proof_hash_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof_hash))
+        .unwrap();
+        let vk_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), self.vk.clone())
+        .unwrap();
+        let hash_vk_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_hash_vk"), self.hash_vk.clone())
+        .unwrap();
+        <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::verify(&vk_gadget, &input1_gadget, &proof1_gadget)
+        .unwrap()
+        .enforce_equal(&Boolean::constant(true))
+        .unwrap();
+        InnerSNARKGadget::verify(&vk_gadget, &input2_gadget, &proof2_gadget)
+        .unwrap()
+        .enforce_equal(&Boolean::constant(true))
+        .unwrap();
+        InnerSNARKGadget::verify(&hash_vk_gadget, &input_hash_gadget, &proof_hash_gadget)
+        .unwrap()
+        .enforce_equal(&Boolean::constant(true))
+        .unwrap();
+
+        // println!("Working: {}", cs.is_satisfied().unwrap());
+
+        println!("recursive circuit has {} constraints", cs.num_constraints());
+
+        Ok(())
+    }
+}
 
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let mut rng = test_rng();
@@ -578,6 +699,29 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
         "proof hash: {}",
         InnerSNARK::verify(&hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
     );
+
+    let agg_circuit = InnerAggregationCircuit {
+        a: hash1,
+        b: hash2,
+        c: hash3,
+        proof1: proof1,
+        proof2: proof2,
+        proof_hash: proof_hash,
+        vk: vk.clone(),
+        hash_vk: hash_vk.clone(),
+    };
+
+    // Figure out input
+    println!("{:?}", hash3.into_repr().to_bits_le());
+    let mut bits = hash3.into_repr().to_bits_le();
+    bits.truncate(Fr::size_in_bits());
+    let inner_input : Vec<MNT6Fr> = bits.iter().map(|a| if *a { MNT6Fr::one() } else { MNT6Fr::zero() }).collect();
+
+    let (inner_pk, inner_vk) = OuterSNARK::setup(agg_circuit.clone(), &mut rng).unwrap();
+    let inner_proof = OuterSNARK::prove(&inner_pk, agg_circuit.clone(), &mut rng).unwrap();
+    println!("inner proof: {}", OuterSNARK::verify(&inner_vk, &inner_input[..], &inner_proof).unwrap());
+
+    /*
 
     let cs_sys = ConstraintSystem::<MNT6Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
@@ -666,6 +810,7 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     println!("Working: {}", cs.is_satisfied().unwrap());
 
     println!("recursive circuit has {} constraints", cs.num_constraints());
+    */
 
 }
 
