@@ -892,25 +892,21 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
 
 }
 
-fn merkle_circuit(params : &PoseidonParameters<Fr>, path: &[Fr], root: Fr, selectors: &[bool]) {
-    let cs_sys = ConstraintSystem::<Fr>::new();
-    let cs = ConstraintSystemRef::new(cs_sys);
+fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: &[Fr], root: FpVar<Fr>, selectors: &[bool]) -> FpVar<Fr> {
 
-    let root_var = FpVar::Var(
-        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(root.clone())).unwrap(),
+    let first = FpVar::Var(
+        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(path[0].clone())).unwrap(),
     );
 
-    let mut last = FpVar::Var(
-        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(path[0].clone())).unwrap(),
-    );
+    let mut last = first.clone();
 
     // println!("Working: {}", cs.is_satisfied().unwrap());
     for (i, next_hash) in path[1..].iter().enumerate() {
         let b_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(next_hash.clone())).unwrap(),
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(next_hash.clone())).unwrap(),
         );
         let bool_var = Boolean::from(
-            AllocatedBool::<Fr>::new_input(cs.clone(), || Ok(selectors[i+1].clone())).unwrap(),
+            AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(selectors[i+1].clone())).unwrap(),
         );
         let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
         let mut inputs = Vec::new();
@@ -923,6 +919,36 @@ fn merkle_circuit(params : &PoseidonParameters<Fr>, path: &[Fr], root: Fr, selec
     last.enforce_equal(&root_var).unwrap();
 
     println!("circuit has {} constraints", cs.num_constraints());
+
+    first
+}
+
+fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: Vec<Vec<Fr>>, leafs: Vec<Fr>, root: Fr, selectors: Vec<Vec<bool>>) {
+
+    let first = FpVar::Var(
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(path[0].clone())).unwrap(),
+    );
+    let root_var = FpVar::Var(
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(root.clone())).unwrap(),
+    );
+
+    let mut last = first.clone();
+    let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
+
+    for (i,p) in path.iter().enumerate() {
+        let leaf_var = merkle_circuit(cs.clone(), params, p, root_var.clone(), &selectors[i]);
+        // check leafs
+        let next = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[i+1].clone())).unwrap(),
+        );
+        let mut inputs = Vec::new();
+        inputs.push(bool_var.select(&last, &b_var).unwrap());
+        inputs.push(bool_var.select(&next, &last).unwrap());
+        let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs[..]).unwrap();
+        hash_gadget.enforce_equal(&leaf_var);
+        last = next
+    }
+
 }
 
 fn main() {
@@ -930,7 +956,9 @@ fn main() {
     let selectors = vec![false, false, false, false];
     let root = Fr::one();
     let path = vec![root, root, root, root];
-    merkle_circuit(&params, &path, root.clone(), &selectors);
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    // merkle_circuit(cs, &params, &path, root.clone(), &selectors);
 }
 
 fn main2() {
