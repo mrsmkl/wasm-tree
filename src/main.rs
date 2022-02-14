@@ -47,6 +47,7 @@ use ark_groth16::VerifyingKey;
 use ark_std::One;
 use ark_ff::ToConstraintField;
 use ark_groth16::ProvingKey;
+use ark_r1cs_std::ToBitsGadget;
 
 trait HashField : Absorb + PrimeField {
 }
@@ -803,16 +804,16 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs).unwrap();
     hash_gadget.enforce_equal(&c_var);
 
-    /*
+    let a_bits = a_var.to_bits_le().unwrap();
+    let b_bits = b_var.to_bits_le().unwrap();
+    let c_bits = c_var.to_bits_le().unwrap();
+
     let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
     let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
     let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
-    let input_hash_bool_vec = input_hash_gadget.clone().into_iter().collect::<Vec<_>>();
-
-    input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0]);
-    input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1]);
-    input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2]);
-    */
+    input1_bool_vec[0].enforce_equal(&a_bits);
+    input2_bool_vec[0].enforce_equal(&b_bits);
+    input3_bool_vec[0].enforce_equal(&c_bits);
 
     let proof1_gadget = <OuterSNARKGadget as SNARKGadget<
         <MNT6PairingEngine as PairingEngine>::Fr,
