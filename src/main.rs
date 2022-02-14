@@ -45,6 +45,7 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_groth16::Proof;
 use ark_groth16::VerifyingKey;
 use ark_std::One;
+use ark_ff::ToConstraintField;
 
 trait HashField : Absorb + PrimeField {
 }
@@ -672,6 +673,16 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregationCircuit {
     }
 }
 
+fn convert_inputs(inputs: &[Fr]) -> Vec<MNT6Fr> {
+    inputs
+        .iter()
+        .map(|input| {
+            MNT6Fr::from_repr(input
+                .into_repr()).unwrap()
+        })
+        .collect::<Vec<_>>()
+}
+
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let mut rng = test_rng();
 
@@ -712,14 +723,17 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     };
 
     // Figure out input
-    println!("{:?}", hash3.into_repr().to_bits_le());
     let mut bits = hash3.into_repr().to_bits_le();
     bits.truncate(Fr::size_in_bits());
+    println!("{:?}", bits);
     let inner_input : Vec<MNT6Fr> = bits.iter().map(|a| if *a { MNT6Fr::one() } else { MNT6Fr::zero() }).collect();
+
+    let inp = convert_inputs(&vec![hash3.clone()]);
+    println!("{:?}", inp);
 
     let (inner_pk, inner_vk) = OuterSNARK::setup(agg_circuit.clone(), &mut rng).unwrap();
     let inner_proof = OuterSNARK::prove(&inner_pk, agg_circuit.clone(), &mut rng).unwrap();
-    println!("inner proof: {}", OuterSNARK::verify(&inner_vk, &inner_input[..], &inner_proof).unwrap());
+    println!("inner proof: {}", OuterSNARK::verify(&inner_vk, &inp, &inner_proof).unwrap());
 
     /*
 
