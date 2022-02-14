@@ -49,6 +49,7 @@ use ark_ff::ToConstraintField;
 use ark_groth16::ProvingKey;
 use ark_r1cs_std::ToBitsGadget;
 use ark_crypto_primitives::snark::FromFieldElementsGadget;
+use ark_r1cs_std::boolean::AllocatedBool;
 
 trait HashField : Absorb + PrimeField {
 }
@@ -889,14 +890,50 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
         >>::InputVar::repack_input(&vec![mnt6(&hash5)]);
     println!("outer proof: {}", InnerSNARK::verify(&outer_vk, &outer_input, &outer_proof).unwrap());
 
-    /*
+}
+
+fn merkle_circuit(params : &PoseidonParameters<Fr>, path: &[Fr], root: Fr, selectors: &[bool]) {
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
-    */
 
+    let root_var = FpVar::Var(
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(root.clone())).unwrap(),
+    );
+
+    let mut last = FpVar::Var(
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(path[0].clone())).unwrap(),
+    );
+
+    // println!("Working: {}", cs.is_satisfied().unwrap());
+    for (i, next_hash) in path[1..].iter().enumerate() {
+        let b_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(next_hash.clone())).unwrap(),
+        );
+        let bool_var = Boolean::from(
+            AllocatedBool::<Fr>::new_input(cs.clone(), || Ok(selectors[i+1].clone())).unwrap(),
+        );
+        let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
+        let mut inputs = Vec::new();
+        inputs.push(bool_var.select(&last, &b_var).unwrap());
+        inputs.push(bool_var.select(&b_var, &last).unwrap());
+        let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs[..]).unwrap();
+        last = hash_gadget
+    }
+
+    last.enforce_equal(&root_var).unwrap();
+
+    println!("circuit has {} constraints", cs.num_constraints());
 }
 
 fn main() {
+    let params = generate_hash();
+    let selectors = vec![false, false, false, false];
+    let root = Fr::one();
+    let path = vec![root, root, root, root];
+    merkle_circuit(&params, &path, root.clone(), &selectors);
+}
+
+fn main2() {
 
     let buffer = get_file("test.wasm".into());
 
