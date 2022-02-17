@@ -48,8 +48,8 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
     
         let pc_hash = hash_code(&self.params, &after.pc);
         let stack_hash = hash_list(&self.params, &before.expr_stack[..elen-2].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
-        let locals_hash = hash_list(&self.params, &before.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
-        let control_hash = hash_list(&self.params, &before.control_stack.iter().map(|a| a.hash(&self.params)).collect::<Vec<Fr>>());
+        let locals_hash = before.hash_locals(&self.params);
+        let control_hash = before.hash_control(&self.params);
 
         let p1 = before.expr_stack[elen - 1];
         let p2 = before.expr_stack[elen - 2];

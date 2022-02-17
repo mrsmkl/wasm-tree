@@ -135,6 +135,14 @@ fn hash_list(params: &PoseidonParameters<Fr>, lst: &[Fr]) -> Fr {
     res
 }
 
+fn hash_many(params: &PoseidonParameters<Fr>, lst: &[Fr]) -> Fr {
+    let mut inputs = vec![];
+    for e in lst.iter() {
+        inputs.push(e.clone())
+    }
+    CRH::<Fr>::evaluate(&params, inputs).unwrap()
+}
+
 fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
     let mut res = Fr::zero();
     for op in code.iter().rev() {
@@ -294,15 +302,18 @@ pub struct VM {
 pub mod add;
 pub mod sub;
 pub mod gt;
+pub mod get;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
 use crate::gt::GtCircuit;
+use crate::get::GetCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
     sub: Vec<SubCircuit>,
     gt: Vec<GtCircuit>,
+    get: Vec<GetCircuit>,
 }
 
 impl VM {
@@ -311,15 +322,28 @@ impl VM {
             pc: code,
             expr_stack: vec![],
             control_stack: vec![],
-            locals: vec![0; 4],
+            locals: vec![0; 2],
         }
     }
+
+    fn hash_stack(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        hash_list(&params, &self.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>())
+    }
+
+    fn hash_locals(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        hash_many(&params, &self.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>())
+    }
+
+    fn hash_control(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        hash_list(&params, &self.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>())
+    }
+
     fn hash(&self, params: &PoseidonParameters<Fr>) -> Fr {
         let mut inputs = vec![];
         inputs.push(hash_code(&params, &self.pc));
-        inputs.push(hash_list(&params, &self.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        inputs.push(hash_list(&params, &self.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        inputs.push(hash_list(&params, &self.control_stack.iter().map(|a| a.hash(&params)).collect::<Vec<Fr>>()));
+        inputs.push(self.hash_stack(&params));
+        inputs.push(self.hash_locals(&params));
+        inputs.push(self.hash_control(&params));
         CRH::<Fr>::evaluate(&params, inputs).unwrap()
     }
 
@@ -379,7 +403,14 @@ impl VM {
             }
             CGetLocal(a) => {
                 self.expr_stack.push(self.locals[*a as usize]);
-                self.incr_pc()
+                let a = *a;
+                self.incr_pc();
+                c.get.push(GetCircuit{
+                    before,
+                    after: self.clone(),
+                    params: params.clone(),
+                    idx: a,
+                })
             }
             CSetLocal(a) => {
                 self.locals[*a as usize] = self.expr_stack[elen - 1];
@@ -843,7 +874,7 @@ fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, pa
         inputs.push(last.clone());
         inputs.push(next.clone());
         let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs[..]).unwrap();
-        hash_gadget.enforce_equal(&leaf_var);
+        hash_gadget.enforce_equal(&leaf_var).unwrap();
         last = next
     }
     last.enforce_equal(&end_var).unwrap();
@@ -882,6 +913,7 @@ fn main() {
             add: vec![],
             sub: vec![],
             gt: vec![],
+            get: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);
