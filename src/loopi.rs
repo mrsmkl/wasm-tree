@@ -11,7 +11,6 @@ use ark_relations::r1cs::SynthesisError;
 use ark_relations::r1cs::ConstraintSystemRef;
 use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
-use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 
 use crate::{VM,hash_code};
 
@@ -42,10 +41,8 @@ impl ConstraintSynthesizer<Fr> for LoopCircuit {
 
         println!("before {:?}", before);
         println!("after {:?}", after);
-    
-        let elen = before.expr_stack.len();
 
-        let cont = match after.pc.clone()[0] {
+        let cont = match after.pc[0].clone() {
             CLoop(cont) => cont,
             _ => panic!("Wrong instruction"),
         };
@@ -109,7 +106,7 @@ impl ConstraintSynthesizer<Fr> for LoopCircuit {
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
         inputs_vm_before.push(hash_pc_gadget);
-        inputs_vm_before.push(stack_var);
+        inputs_vm_before.push(stack_var.clone());
         inputs_vm_before.push(locals_var.clone());
         inputs_vm_before.push(control_before_var.clone());
         let hash_vm_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_before).unwrap();

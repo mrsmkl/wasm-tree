@@ -17,7 +17,6 @@ use ark_r1cs_std::{
 use ark_crypto_primitives::CRHSchemeGadget;
 use ark_relations::r1cs::ConstraintSystemRef;
 use ark_relations::r1cs::SynthesisError;
-use ark_ff::BigInteger;
 use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_ff::PrimeField;
 use ark_sponge::Absorb;
@@ -905,6 +904,7 @@ fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, pa
 
 }
 
+/*
 fn main2() {
     let params = generate_hash();
     let selectors = vec![false, false, false, false];
@@ -914,6 +914,7 @@ fn main2() {
     let cs = ConstraintSystemRef::new(cs_sys);
     // merkle_circuit(cs, &params, &path, root.clone(), &selectors);
 }
+*/
 
 fn main() {
 

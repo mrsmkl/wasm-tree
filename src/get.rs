@@ -43,8 +43,6 @@ impl ConstraintSynthesizer<Fr> for GetCircuit {
         println!("before {:?}", before);
         println!("after {:?}", after);
     
-        let elen = before.expr_stack.len();
-    
         let pc_hash = hash_code(&self.params, &after.pc);
         let stack_hash = before.hash_stack(&self.params);
         // let locals_hash = before.hash_locals(&self.params);
