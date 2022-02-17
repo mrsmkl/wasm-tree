@@ -12,9 +12,11 @@ use ark_relations::r1cs::ConstraintSystemRef;
 use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 
+use ark_r1cs_std::R1CSVar;
+
 use std::cmp::Ordering;
 
-use crate::{VM,hash_list,hash_code};
+use crate::{VM,hash_list,hash_code, hash_many};
 
 #[derive(Debug, Clone)]
 pub struct GtCircuit {
@@ -47,7 +49,7 @@ impl ConstraintSynthesizer<Fr> for GtCircuit {
     
         let pc_hash = hash_code(&self.params, &after.pc);
         let stack_hash = hash_list(&self.params, &before.expr_stack[..elen-2].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
-        let locals_hash = hash_list(&self.params, &before.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
+        let locals_hash = hash_many(&self.params, &before.locals.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>());
         let control_hash = hash_list(&self.params, &before.control_stack.iter().map(|a| a.hash(&self.params)).collect::<Vec<Fr>>());
 
         let p1 = before.expr_stack[elen - 1];
@@ -85,7 +87,7 @@ impl ConstraintSynthesizer<Fr> for GtCircuit {
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
         println!("pc hash {}", hash_code(&self.params, &before.pc));
-//        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+        println!("pc hash {}", hash_pc_gadget.value().unwrap());
     
         let mut inputs_stack_before2 = Vec::new();
         inputs_stack_before2.push(var_b.clone());
@@ -95,7 +97,7 @@ impl ConstraintSynthesizer<Fr> for GtCircuit {
         let hash_stack_before2_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before2).unwrap();
     
         println!("stack before2 {}", hash_list(&self.params, &before.expr_stack[..elen-1].iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-//        println!("stack before2 {}", hash_stack_before2_gadget.value().unwrap());
+        println!("stack before2 {}", hash_stack_before2_gadget.value().unwrap());
     
         let mut inputs_stack_before = Vec::new();
         inputs_stack_before.push(var_a.clone());
@@ -103,10 +105,10 @@ impl ConstraintSynthesizer<Fr> for GtCircuit {
         let hash_stack_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_before).unwrap();
     
         println!("stack before {}", hash_list(&self.params, &before.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-//        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
+        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
 
         // compute comparison
-        let cmp_var = var_a.is_cmp(&var_b, Ordering::Greater, false)?;
+        let cmp_var = var_b.is_cmp(&var_a, Ordering::Greater, false)?;
         let cmp_var : FpVar<Fr> = From::from(cmp_var.clone());
 
         let mut inputs_stack_after = Vec::new();
@@ -117,7 +119,7 @@ impl ConstraintSynthesizer<Fr> for GtCircuit {
         let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
     
         println!("stack after {}", hash_list(&self.params, &after.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-//        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
+        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
 
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -143,7 +145,7 @@ impl ConstraintSynthesizer<Fr> for GtCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-//        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

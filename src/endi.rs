@@ -30,6 +30,9 @@ impl EndCircuit {
     }
 }
 
+use ark_r1cs_std::R1CSVar;
+
+
 impl ConstraintSynthesizer<Fr> for EndCircuit {
     fn generate_constraints(
         self,
@@ -42,12 +45,13 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
         println!("before {:?}", before);
         println!("after {:?}", after);
 
-        let LoopFrame(start, cont) = before.control_stack.last().unwrap().clone();
+        let LoopFrame(cont, start) = before.control_stack.last().unwrap().clone();
 
         let cont_hash = hash_code(&self.params, &cont);
         let start_hash = hash_code(&self.params, &start);
 
         let pc_hash = hash_code(&self.params, &after.pc);
+        let pc_other_hash = hash_code(&self.params, &before.pc[1..]);
         let stack_hash = before.hash_stack(&self.params);
         let locals_hash = before.hash_locals(&self.params);
         let control_hash_after = after.hash_control(&self.params);
@@ -76,8 +80,8 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
         let cont_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(cont_hash)).unwrap(),
         );
-        let hash_pc_after_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
+        let hash_pc_other_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_other_hash)).unwrap(),
         );
 
         let frame_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
@@ -88,7 +92,7 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
 
         let hash_pc_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
             FpVar::Constant(Fr::from(9)),
-            hash_pc_after_var.clone(),
+            hash_pc_other_var.clone(),
         ]).unwrap();
 
         let control_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
@@ -96,8 +100,13 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
             control_after_var.clone(),
         ]).unwrap();
 
-        println!("pc hash {}", hash_code(&self.params, &before.pc));
-//        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+        println!("pc before hash {}", hash_code(&self.params, &before.pc));
+        println!("pc before hash {}", hash_pc_before_var.value().unwrap());
+
+        println!("pc other hash {}", hash_pc_other_var.value().unwrap());
+
+        println!("pc after hash {}", hash_code(&self.params, &after.pc));
+        println!("pc after hash {}", cont_var.value().unwrap());
         
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -109,7 +118,7 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
 
         // Compute VM hash after
         let mut inputs_vm_after = Vec::new();
-        inputs_vm_after.push(hash_pc_after_var);
+        inputs_vm_after.push(cont_var);
         inputs_vm_after.push(stack_var);
         inputs_vm_after.push(locals_var);
         inputs_vm_after.push(control_after_var.clone());
@@ -123,7 +132,7 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-//        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

@@ -15,6 +15,8 @@ use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 
 use crate::{VM,hash_code};
 
+use ark_r1cs_std::R1CSVar;
+
 #[derive(Debug, Clone)]
 pub struct SetCircuit {
     pub before: VM,
@@ -44,7 +46,7 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
         println!("after {:?}", after);
     
         let pc_hash = hash_code(&self.params, &after.pc);
-        let stack_hash = before.hash_stack(&self.params);
+        let stack_hash = after.hash_stack(&self.params);
         // let locals_hash = before.hash_locals(&self.params);
         let control_hash = before.hash_control(&self.params);
 
@@ -94,8 +96,11 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
         inputs_pc.push(hash_pc_after_var.clone());
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
+        println!("stack before {}", before.hash_stack(&self.params));
+        println!("stack before {}", stack_before_var.value().unwrap());
+        
         println!("pc hash {}", hash_code(&self.params, &before.pc));
-//        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+        println!("pc hash {}", hash_pc_gadget.value().unwrap());
         
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -121,7 +126,7 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-//        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

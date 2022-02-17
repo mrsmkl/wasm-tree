@@ -200,7 +200,9 @@ fn hash_code(params: &PoseidonParameters<Fr>, code: &[CodeTree]) -> Fr {
                 let mut inputs = vec![];
                 inputs.push(Fr::from(9));
                 inputs.push(res);
+                // println!("cend {} {} {}", &inputs[0], &inputs[1], &res);
                 res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+                // println!("cend {}", &res);
             }
         }
     }
@@ -940,6 +942,13 @@ fn main2() {
 }
 */
 
+fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    println!("Testing circuit");
+    circuit.generate_constraints(cs);
+}
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
@@ -970,12 +979,25 @@ fn main() {
             breakno: vec![],
             breakyes: vec![],
         };
-        for i in 0..60 {
+        for i in 0..100 {
             vm.step(&params, &mut c);
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
-        handle_recursive_groth(c.add)
+
+        /*
+        test_circuit(c.sub[0].clone());
+        test_circuit(c.gt[0].clone());
+        test_circuit(c.constant[0].clone());
+        test_circuit(c.get[0].clone());
+        test_circuit(c.set[0].clone());
+        test_circuit(c.loopi[0].clone());
+        test_circuit(c.endi[0].clone());
+        test_circuit(c.breakno[0].clone());
+        */
+        test_circuit(c.breakyes[0].clone());
+
+        // handle_recursive_groth(c.add)
     }
 
 }

@@ -30,6 +30,8 @@ impl LoopCircuit {
     }
 }
 
+use ark_r1cs_std::R1CSVar;
+
 impl ConstraintSynthesizer<Fr> for LoopCircuit {
     fn generate_constraints(
         self,
@@ -101,7 +103,7 @@ impl ConstraintSynthesizer<Fr> for LoopCircuit {
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
         println!("pc hash {}", hash_code(&self.params, &before.pc));
-//        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+        println!("pc hash {}", hash_pc_gadget.value().unwrap());
         
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -127,7 +129,7 @@ impl ConstraintSynthesizer<Fr> for LoopCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-//        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

@@ -33,6 +33,8 @@ impl BreakYesCircuit {
     }
 }
 
+use ark_r1cs_std::R1CSVar;
+
 impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
     fn generate_constraints(
         self,
@@ -45,11 +47,11 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
         println!("before {:?}", before);
         println!("after {:?}", after);
 
-        let LoopFrame(start, cont) = before.control_stack.last().unwrap().clone();
+        let LoopFrame(cont, start) = before.control_stack.last().unwrap().clone();
 
         let cont_hash = hash_code(&self.params, &cont);
         let start_hash = hash_code(&self.params, &start);
-        let pc_other_hash = hash_code(&self.params, &after.pc[1..]);
+        let pc_other_hash = hash_code(&self.params, &before.pc[1..]);
 
         let stack_hash = after.hash_stack(&self.params);
         let locals_hash = before.hash_locals(&self.params);
@@ -78,8 +80,11 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
         );
 
         // check that read var non zero
-        let cmp_var = read_var.is_cmp(&FpVar::constant(Fr::from(0)), Ordering::Equal, true)?;
-        cmp_var.enforce_equal(&Boolean::constant(false))?;
+        // TODO: what's wrong???
+        /*
+        let cmp_var = read_var.is_cmp(&FpVar::constant(Fr::from(0)), Ordering::Equal, false).unwrap();
+        cmp_var.enforce_equal(&Boolean::constant(false)).unwrap();
+        */
 
         let start_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(start_hash)).unwrap(),
@@ -99,11 +104,11 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
 
         let stack_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
             read_var.clone(),
-            start_var.clone(),
+            stack_after_var.clone(),
         ]).unwrap();
 
         let hash_pc_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-            FpVar::Constant(Fr::from(8)),
+            FpVar::Constant(Fr::from(7)),
             FpVar::Constant(Fr::from(0)),
             hash_pc_other_var.clone(),
         ]).unwrap();
@@ -113,9 +118,18 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
             control_after_var.clone(),
         ]).unwrap();
 
-        println!("pc hash {}", hash_code(&self.params, &before.pc));
-//        println!("pc hash {}", hash_pc_gadget.value().unwrap());
-        
+        println!("pc before hash {}", hash_code(&self.params, &before.pc));
+        println!("pc before hash {}", hash_pc_before_var.value().unwrap());
+
+        println!("control before hash {}", before.hash_control(&self.params));
+        println!("control before hash {}", control_before_var.value().unwrap());
+
+        println!("stack before hash {}", before.hash_stack(&self.params));
+        println!("stack before hash {}", stack_before_var.value().unwrap());
+
+        println!("pc after hash {}", hash_code(&self.params, &after.pc));
+        println!("pc after hash {}", start_var.value().unwrap());
+
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
         inputs_vm_before.push(hash_pc_before_var);
@@ -140,7 +154,7 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-//        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }
