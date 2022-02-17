@@ -303,17 +303,20 @@ pub mod add;
 pub mod sub;
 pub mod gt;
 pub mod get;
+pub mod set;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
 use crate::gt::GtCircuit;
 use crate::get::GetCircuit;
+use crate::set::SetCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
     sub: Vec<SubCircuit>,
     gt: Vec<GtCircuit>,
     get: Vec<GetCircuit>,
+    set: Vec<SetCircuit>,
 }
 
 impl VM {
@@ -413,9 +416,16 @@ impl VM {
                 })
             }
             CSetLocal(a) => {
-                self.locals[*a as usize] = self.expr_stack[elen - 1];
+                let a = *a as usize;
+                self.locals[a] = self.expr_stack[elen - 1];
                 self.expr_stack.pop();
-                self.incr_pc()
+                self.incr_pc();
+                c.set.push(SetCircuit{
+                    before,
+                    after: self.clone(),
+                    params: params.clone(),
+                    idx: a,
+                })
             }
             CLoop(cont) => {
                 self.control_stack.push(ControlFrame::LoopFrame(cont.clone(), self.pc.clone()));
@@ -914,6 +924,7 @@ fn main() {
             sub: vec![],
             gt: vec![],
             get: vec![],
+            set: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);
