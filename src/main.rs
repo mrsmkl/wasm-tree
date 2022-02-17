@@ -313,6 +313,8 @@ use crate::set::SetCircuit;
 use crate::constant::ConstCircuit;
 use crate::loopi::LoopCircuit;
 use crate::endi::EndCircuit;
+use crate::breakno::BreakNoCircuit;
+use crate::breakyes::BreakYesCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
@@ -323,6 +325,8 @@ pub struct Collector {
     constant: Vec<ConstCircuit>,
     loopi: Vec<LoopCircuit>,
     endi: Vec<EndCircuit>,
+    breakno: Vec<BreakNoCircuit>,
+    breakyes: Vec<BreakYesCircuit>,
 }
 
 impl VM {
@@ -471,9 +475,19 @@ impl VM {
                     for _i in 0..=num {
                         self.control_stack.pop();
                     }
-                    self.pc = c1
+                    self.pc = c1;
+                    c.breakyes.push(BreakYesCircuit{
+                        before,
+                        after: self.clone(),
+                        params: params.clone(),
+                    })
                 } else {
-                    self.incr_pc()
+                    self.incr_pc();
+                    c.breakno.push(BreakNoCircuit{
+                        before,
+                        after: self.clone(),
+                        params: params.clone(),
+                    })
                 }
             }
         }
@@ -953,6 +967,8 @@ fn main() {
             constant: vec![],
             loopi: vec![],
             endi: vec![],
+            breakno: vec![],
+            breakyes: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);

@@ -18,13 +18,13 @@ use std::cmp::Ordering;
 use crate::{VM,hash_code};
 
 #[derive(Debug, Clone)]
-pub struct BreakNoCircuit {
+pub struct BreakYesCircuit {
     pub before: VM,
     pub after: VM,
     pub params: PoseidonParameters<Fr>,
 }
 
-impl BreakNoCircuit {
+impl BreakYesCircuit {
     pub fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
@@ -33,7 +33,7 @@ impl BreakNoCircuit {
     }
 }
 
-impl ConstraintSynthesizer<Fr> for BreakNoCircuit {
+impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<Fr>,
