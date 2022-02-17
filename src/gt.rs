@@ -15,16 +15,18 @@ use ark_relations::r1cs::ConstraintSystemRef;
 use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 
+use std::cmp::Ordering;
+
 use crate::{VM,hash_list,hash_code};
 
 #[derive(Debug, Clone)]
-pub struct SubCircuit {
+pub struct GtCircuit {
     pub before: VM,
     pub after: VM,
     pub params: PoseidonParameters<Fr>,
 }
 
-impl SubCircuit {
+impl GtCircuit {
     fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
@@ -33,7 +35,7 @@ impl SubCircuit {
     }
 }
 
-impl ConstraintSynthesizer<Fr> for SubCircuit {
+impl ConstraintSynthesizer<Fr> for GtCircuit {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<Fr>,
@@ -105,9 +107,13 @@ impl ConstraintSynthesizer<Fr> for SubCircuit {
     
         println!("stack before {}", hash_list(&self.params, &before.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
 //        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
-    
+
+        // compute comparison
+        let cmp_var = var_a.is_cmp(&var_b, Ordering::Greater, false)?;
+        let cmp_var : FpVar<Fr> = From::from(cmp_var.clone());
+
         let mut inputs_stack_after = Vec::new();
-        inputs_stack_after.push(var_a.clone() - var_b.clone());
+        inputs_stack_after.push(cmp_var.clone());
         inputs_stack_after.push(FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
         ));

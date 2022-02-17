@@ -293,13 +293,16 @@ pub struct VM {
 
 pub mod add;
 pub mod sub;
+pub mod gt;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
+use crate::gt::GtCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
     sub: Vec<SubCircuit>,
+    gt: Vec<GtCircuit>,
 }
 
 impl VM {
@@ -308,7 +311,7 @@ impl VM {
             pc: code,
             expr_stack: vec![],
             control_stack: vec![],
-            locals: vec![0; 10],
+            locals: vec![0; 4],
         }
     }
     fn hash(&self, params: &PoseidonParameters<Fr>) -> Fr {
@@ -363,7 +366,12 @@ impl VM {
                 let res = if p1 < p2 { 1 } else { 0 };
                 self.expr_stack[elen - 2] = res;
                 self.expr_stack.pop();
-                self.incr_pc()
+                self.incr_pc();
+                c.gt.push(GtCircuit{
+                    before,
+                    after: self.clone(),
+                    params: params.clone(),
+                })
             }
             CConst(a) => {
                 self.expr_stack.push(*a);
@@ -873,6 +881,7 @@ fn main() {
         let mut c = Collector {
             add: vec![],
             sub: vec![],
+            gt: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);
