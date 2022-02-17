@@ -81,10 +81,8 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
 
         // check that read var non zero
         // TODO: what's wrong???
-        /*
-        let cmp_var = read_var.is_cmp(&FpVar::constant(Fr::from(0)), Ordering::Equal, false).unwrap();
+        let cmp_var = read_var.is_eq(&FpVar::constant(Fr::from(0))).unwrap();
         cmp_var.enforce_equal(&Boolean::constant(false)).unwrap();
-        */
 
         let start_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(start_hash)).unwrap(),
