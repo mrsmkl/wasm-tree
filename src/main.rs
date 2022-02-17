@@ -305,6 +305,7 @@ pub mod gt;
 pub mod get;
 pub mod set;
 pub mod constant;
+pub mod loopi;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
@@ -312,6 +313,7 @@ use crate::gt::GtCircuit;
 use crate::get::GetCircuit;
 use crate::set::SetCircuit;
 use crate::constant::ConstCircuit;
+use crate::loopi::LoopCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
@@ -320,6 +322,7 @@ pub struct Collector {
     get: Vec<GetCircuit>,
     set: Vec<SetCircuit>,
     constant: Vec<ConstCircuit>,
+    loopi: Vec<LoopCircuit>,
 }
 
 impl VM {
@@ -439,7 +442,12 @@ impl VM {
             }
             CLoop(cont) => {
                 self.control_stack.push(ControlFrame::LoopFrame(cont.clone(), self.pc.clone()));
-                self.incr_pc()
+                self.incr_pc();
+                c.loopi.push(LoopCircuit{
+                    before,
+                    after: self.clone(),
+                    params: params.clone(),
+                })
             }
             CEnd => {
                 if clen == 0 {
@@ -936,6 +944,7 @@ fn main() {
             get: vec![],
             set: vec![],
             constant: vec![],
+            loopi: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);
