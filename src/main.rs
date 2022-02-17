@@ -138,7 +138,7 @@ fn hash_many(params: &PoseidonParameters<Fr>, lst: &[Fr]) -> Fr {
     CRH::<Fr>::evaluate(&params, inputs).unwrap()
 }
 
-fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
+fn hash_code(params: &PoseidonParameters<Fr>, code: &[CodeTree]) -> Fr {
     let mut res = Fr::zero();
     for op in code.iter().rev() {
         // println!("hashing {:?}", op);
@@ -302,6 +302,8 @@ pub mod set;
 pub mod constant;
 pub mod loopi;
 pub mod endi;
+pub mod breakno;
+pub mod breakyes;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
