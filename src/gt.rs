@@ -1,13 +1,10 @@
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::{
     fields::fp::{AllocatedFp, FpVar},
-    R1CSVar,
 };
 use ark_crypto_primitives::crh::poseidon::CRH;
 use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParametersVar};
-use ark_mnt4_298::{
-    constraints::PairingVar as MNT4PairingVar, Fr, MNT4_298 as MNT4PairingEngine,
-};
+use ark_mnt4_298::Fr;
 use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_crypto_primitives::{CRHSchemeGadget, CRHScheme};
 use ark_relations::r1cs::SynthesisError;

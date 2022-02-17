@@ -1,13 +1,10 @@
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::{
     fields::fp::{AllocatedFp, FpVar},
-    R1CSVar,
 };
 use ark_crypto_primitives::crh::poseidon::CRH;
 use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParametersVar};
-use ark_mnt4_298::{
-    constraints::PairingVar as MNT4PairingVar, Fr, MNT4_298 as MNT4PairingEngine,
-};
+use ark_mnt4_298::Fr;
 use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_crypto_primitives::{CRHSchemeGadget, CRHScheme};
 use ark_relations::r1cs::SynthesisError;
@@ -105,8 +102,9 @@ impl ConstraintSynthesizer<Fr> for AddCircuit {
     
         println!("stack before {}", hash_list(&self.params, &before.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
 //        println!("stack before {}", hash_stack_before_gadget.value().unwrap());
-    
+
         let mut inputs_stack_after = Vec::new();
+        // TODO: check that 32-bit
         inputs_stack_after.push(var_a.clone() + var_b.clone());
         inputs_stack_after.push(FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),

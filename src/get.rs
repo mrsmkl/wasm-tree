@@ -1,7 +1,6 @@
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::{
     fields::fp::{AllocatedFp, FpVar},
-    R1CSVar,
 };
 use ark_crypto_primitives::crh::poseidon::CRH;
 use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParametersVar};

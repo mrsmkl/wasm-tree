@@ -13,14 +13,12 @@ use ark_relations::r1cs::ConstraintSystem;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::{
     fields::fp::{AllocatedFp, FpVar},
-    R1CSVar,
 };
 use ark_crypto_primitives::CRHSchemeGadget;
 use ark_relations::r1cs::ConstraintSystemRef;
 use ark_relations::r1cs::SynthesisError;
 use ark_ff::BigInteger;
 use ark_relations::r1cs::ConstraintSynthesizer;
-use ark_relations::r1cs::Field;
 use ark_ff::PrimeField;
 use ark_sponge::Absorb;
 
@@ -31,7 +29,6 @@ use ark_mnt6_298::{
     Fr as MNT6Fr,
     constraints::PairingVar as MNT6PairingVar, MNT6_298 as MNT6PairingEngine,
 };
-use ark_ec::mnt4::MNT4;
 use ark_groth16::Groth16;
 use ark_groth16::constraints::Groth16VerifierGadget;
 use ark_std::test_rng;
@@ -45,7 +42,6 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_groth16::Proof;
 use ark_groth16::VerifyingKey;
 use ark_std::One;
-use ark_ff::ToConstraintField;
 use ark_groth16::ProvingKey;
 use ark_r1cs_std::ToBitsGadget;
 use ark_crypto_primitives::snark::FromFieldElementsGadget;
