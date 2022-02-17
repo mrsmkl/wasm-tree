@@ -42,7 +42,7 @@ impl ConstraintSynthesizer<Fr> for LoopCircuit {
         println!("before {:?}", before);
         println!("after {:?}", after);
 
-        let cont = match after.pc[0].clone() {
+        let cont = match before.pc[0].clone() {
             CLoop(cont) => cont,
             _ => panic!("Wrong instruction"),
         };
@@ -84,7 +84,7 @@ impl ConstraintSynthesizer<Fr> for LoopCircuit {
         );
 
         let frame_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-            FpVar::Constant(Fr::from(6)),
+            FpVar::Constant(Fr::from(1)),
             cont_var.clone(),
             start_var.clone(),
         ]).unwrap();

@@ -301,6 +301,7 @@ pub mod get;
 pub mod set;
 pub mod constant;
 pub mod loopi;
+pub mod endi;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;

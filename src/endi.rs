@@ -35,25 +35,22 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
         self,
         cs: ConstraintSystemRef<Fr>,
     ) -> Result<(), SynthesisError> {
-        use crate::CodeTree::CLoop;
+        use crate::ControlFrame::LoopFrame;
         let before = self.before.clone();
         let after = self.after.clone();
 
         println!("before {:?}", before);
         println!("after {:?}", after);
 
-        let cont = match after.pc[0].clone() {
-            CLoop(cont) => cont,
-            _ => panic!("Wrong instruction"),
-        };
+        let LoopFrame(start, cont) = before.control_stack.last().unwrap().clone();
 
         let cont_hash = hash_code(&self.params, &cont);
-        let before_pc_hash = hash_code(&self.params, &before.pc);
+        let start_hash = hash_code(&self.params, &start);
 
         let pc_hash = hash_code(&self.params, &after.pc);
         let stack_hash = before.hash_stack(&self.params);
         let locals_hash = before.hash_locals(&self.params);
-        let control_hash = before.hash_control(&self.params);
+        let control_hash_after = after.hash_control(&self.params);
 
         let public_var = FpVar::Var(
             AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.calc_hash())).unwrap(),
@@ -69,12 +66,12 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
         let stack_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
         );
-        let control_before_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(control_hash)).unwrap(),
+        let control_after_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(control_hash_after)).unwrap(),
         );
 
         let start_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(before_pc_hash)).unwrap(),
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(start_hash)).unwrap(),
         );
         let cont_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(cont_hash)).unwrap(),
@@ -84,28 +81,27 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
         );
 
         let frame_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-            FpVar::Constant(Fr::from(6)),
+            FpVar::Constant(Fr::from(1)),
             cont_var.clone(),
             start_var.clone(),
         ]).unwrap();
 
-        let control_after_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-            frame_var.clone(),
-            control_before_var.clone(),
+        let hash_pc_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
+            FpVar::Constant(Fr::from(9)),
+            hash_pc_after_var.clone(),
         ]).unwrap();
 
-        let mut inputs_pc = Vec::new();
-        inputs_pc.push(FpVar::Constant(Fr::from(8)));
-        inputs_pc.push(cont_var.clone());
-        inputs_pc.push(hash_pc_after_var.clone());
-        let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
-    
+        let control_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
+            frame_var.clone(),
+            control_after_var.clone(),
+        ]).unwrap();
+
         println!("pc hash {}", hash_code(&self.params, &before.pc));
 //        println!("pc hash {}", hash_pc_gadget.value().unwrap());
         
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
-        inputs_vm_before.push(hash_pc_gadget);
+        inputs_vm_before.push(hash_pc_before_var);
         inputs_vm_before.push(stack_var.clone());
         inputs_vm_before.push(locals_var.clone());
         inputs_vm_before.push(control_before_var.clone());
