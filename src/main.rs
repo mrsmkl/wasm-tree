@@ -161,12 +161,6 @@ fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
                 inputs.push(res);
                 res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
             }
-            CEnd => {
-                let mut inputs = vec![];
-                inputs.push(Fr::from(9));
-                inputs.push(res);
-                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
-            }
             CGetLocal(x) => {
                 let mut inputs = vec![];
                 inputs.push(Fr::from(4));
@@ -199,6 +193,12 @@ fn hash_code(params: &PoseidonParameters<Fr>, code: &Vec<CodeTree>) -> Fr {
                 let mut inputs = vec![];
                 inputs.push(Fr::from(8));
                 inputs.push(hash_code(&params, cont));
+                inputs.push(res);
+                res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
+            }
+            CEnd => {
+                let mut inputs = vec![];
+                inputs.push(Fr::from(9));
                 inputs.push(res);
                 res = CRH::<Fr>::evaluate(&params, inputs).unwrap();
             }
@@ -309,6 +309,7 @@ use crate::get::GetCircuit;
 use crate::set::SetCircuit;
 use crate::constant::ConstCircuit;
 use crate::loopi::LoopCircuit;
+use crate::endi::EndCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
@@ -318,6 +319,7 @@ pub struct Collector {
     set: Vec<SetCircuit>,
     constant: Vec<ConstCircuit>,
     loopi: Vec<LoopCircuit>,
+    endi: Vec<EndCircuit>,
 }
 
 impl VM {
@@ -450,7 +452,12 @@ impl VM {
                 }
                 let ControlFrame::LoopFrame(c1, _) = self.control_stack[clen - 1].clone();
                 self.control_stack.pop();
-                self.pc = c1
+                self.pc = c1;
+                c.endi.push(EndCircuit{
+                    before,
+                    after: self.clone(),
+                    params: params.clone(),
+                })
             }
             CBreakIf(num) => {
                 let num = *num as usize;
@@ -942,6 +949,7 @@ fn main() {
             set: vec![],
             constant: vec![],
             loopi: vec![],
+            endi: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);
