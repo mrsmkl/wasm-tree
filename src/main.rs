@@ -304,12 +304,14 @@ pub mod sub;
 pub mod gt;
 pub mod get;
 pub mod set;
+pub mod constant;
 
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
 use crate::gt::GtCircuit;
 use crate::get::GetCircuit;
 use crate::set::SetCircuit;
+use crate::constant::ConstCircuit;
 
 pub struct Collector {
     add: Vec<AddCircuit>,
@@ -317,6 +319,7 @@ pub struct Collector {
     gt: Vec<GtCircuit>,
     get: Vec<GetCircuit>,
     set: Vec<SetCircuit>,
+    constant: Vec<ConstCircuit>,
 }
 
 impl VM {
@@ -401,8 +404,15 @@ impl VM {
                 })
             }
             CConst(a) => {
-                self.expr_stack.push(*a);
-                self.incr_pc()
+                let a = *a;
+                self.expr_stack.push(a);
+                self.incr_pc();
+                c.constant.push(ConstCircuit{
+                    before,
+                    after: self.clone(),
+                    params: params.clone(),
+                    idx: a,
+                })
             }
             CGetLocal(a) => {
                 self.expr_stack.push(self.locals[*a as usize]);
@@ -925,6 +935,7 @@ fn main() {
             gt: vec![],
             get: vec![],
             set: vec![],
+            constant: vec![],
         };
         for i in 0..60 {
             vm.step(&params, &mut c);

@@ -17,14 +17,14 @@ use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 use crate::{VM,hash_list,hash_code};
 
 #[derive(Debug, Clone)]
-pub struct SetCircuit {
+pub struct ConstCircuit {
     pub before: VM,
     pub after: VM,
     pub params: PoseidonParameters<Fr>,
-    pub idx: usize,
+    pub idx: u32,
 }
 
-impl SetCircuit {
+impl ConstCircuit {
     pub fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
@@ -33,7 +33,7 @@ impl SetCircuit {
     }
 }
 
-impl ConstraintSynthesizer<Fr> for SetCircuit {
+impl ConstraintSynthesizer<Fr> for ConstCircuit {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<Fr>,
@@ -48,7 +48,7 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
     
         let pc_hash = hash_code(&self.params, &after.pc);
         let stack_hash = before.hash_stack(&self.params);
-        // let locals_hash = before.hash_locals(&self.params);
+        let locals_hash = before.hash_locals(&self.params);
         let control_hash = before.hash_control(&self.params);
 
         let public_var = FpVar::Var(
@@ -57,23 +57,15 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
 
         let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(self.params.clone())).unwrap();
 
-        let bool_var = Boolean::from(
-            AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(self.idx == 1)).unwrap(),
+        let locals_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(locals_hash)).unwrap(),
         );
 
-        let locals_a = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(before.locals[0]))).unwrap(),
-        );
-        let locals_b = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(before.locals[1]))).unwrap(),
-        );
         let read_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(after.locals[self.idx]))).unwrap(),
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.idx))).unwrap(),
         );
-        let locals_after_a = bool_var.select(&locals_a, &read_var).unwrap();
-        let locals_after_b = bool_var.select(&read_var, &locals_b).unwrap();
 
-        let stack_after_var = FpVar::Var(
+        let stack_before_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
         );
         let control_var = FpVar::Var(
@@ -84,22 +76,25 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
         );
     
-        let locals_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![locals_a, locals_b]).unwrap();
-        let locals_after_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![locals_after_a, locals_after_b]).unwrap();
-
-        let stack_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-            read_var.clone(), stack_after_var.clone()
-        ]).unwrap();
-
         let mut inputs_pc = Vec::new();
-        inputs_pc.push(FpVar::Constant(Fr::from(5)));
-        inputs_pc.push(From::from(bool_var.clone()));
+        inputs_pc.push(FpVar::Constant(Fr::from(6)));
+        inputs_pc.push(read_var.clone());
         inputs_pc.push(hash_pc_after_var.clone());
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
         println!("pc hash {}", hash_code(&self.params, &before.pc));
 //        println!("pc hash {}", hash_pc_gadget.value().unwrap());
         
+        let mut inputs_stack_after = Vec::new();
+        inputs_stack_after.push(read_var.clone());
+        inputs_stack_after.push(FpVar::Var(
+            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
+        ));
+        let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
+
+        println!("stack after {}", hash_list(&self.params, &after.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
+//        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
+
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
         inputs_vm_before.push(hash_pc_gadget);
@@ -111,8 +106,8 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
         // Compute VM hash after
         let mut inputs_vm_after = Vec::new();
         inputs_vm_after.push(hash_pc_after_var);
-        inputs_vm_after.push(stack_after_var);
-        inputs_vm_after.push(locals_after_var);
+        inputs_vm_after.push(hash_stack_after_gadget);
+        inputs_vm_after.push(locals_var);
         inputs_vm_after.push(control_var.clone());
         let hash_vm_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_after).unwrap();
 

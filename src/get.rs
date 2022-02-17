@@ -86,6 +86,7 @@ impl ConstraintSynthesizer<Fr> for GetCircuit {
 
         let mut inputs_pc = Vec::new();
         inputs_pc.push(FpVar::Constant(Fr::from(4)));
+        inputs_pc.push(From::from(bool_var.clone()));
         inputs_pc.push(hash_pc_after_var.clone());
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
