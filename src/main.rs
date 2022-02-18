@@ -1231,7 +1231,7 @@ fn outer_to_inner<C: InstructionCircuit2>(circuit: &C, setup: &OuterSetup, hash_
 fn inner_to_outer<C: InstructionCircuit>(circuit: &C, setup: &InnerSetup) ->
     (InnerAggregationCircuit, OuterSetup) {
     let mut rng = test_rng();
-    let agg_circuit1 = aggregate_level3(circuit.clone(), circuit.clone(), setup);
+    let agg_circuit1 = aggregate_level1(circuit.clone(), circuit.clone(), setup);
     let (pk, vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
 
     let setup2 = OuterSetup {
@@ -1349,6 +1349,7 @@ fn main() {
         let (agg_circuit1, setup2) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
         println!("first level {}", setup2.vk.gamma_abc_g1.len());
         let (agg_circuit2, setup3) = inner_to_outer(&agg_circuit1, &setup2);
+        let (agg_circuit3, setup4) = outer_to_inner(&agg_circuit2, &setup3, &hash_pk, &hash_vk);
 
         /* = aggregate_level2(circuit.clone(), circuit.clone(), &setup1);
         let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
