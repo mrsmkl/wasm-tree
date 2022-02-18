@@ -53,6 +53,10 @@ trait InstructionCircuit : ConstraintSynthesizer<Fr> + Clone {
     fn calc_hash(&self) -> Fr;
 }
 
+trait InstructionCircuit2 : ConstraintSynthesizer<MNT6Fr> + Clone {
+    fn calc_hash(&self) -> Fr;
+}
+
 fn get_file(fname: String) -> Vec<u8> {
     let mut file = File::open(&fname).unwrap();
     let mut buffer = Vec::<u8>::new();
@@ -571,6 +575,12 @@ struct InnerAggregationCircuit {
     hash_vk: InnerSNARKVK,
 }
 
+impl InstructionCircuit2 for InnerAggregationCircuit {
+    fn calc_hash(&self) -> Fr {
+        self.c.clone()
+    }
+}
+
 impl ConstraintSynthesizer<MNT6Fr> for InnerAggregationCircuit {
     fn generate_constraints(
         self,
@@ -690,6 +700,12 @@ struct OuterAggregationCircuit {
     proof2: OuterSNARKProof,
     vk: OuterSNARKVK,
     params: PoseidonParameters<Fr>,
+}
+
+impl InstructionCircuit for OuterAggregationCircuit {
+    fn calc_hash(&self) -> Fr {
+        self.c.clone()
+    }
 }
 
 impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
@@ -978,6 +994,12 @@ struct SelectionCircuit {
     idx: u32,
 }
 
+impl InstructionCircuit2 for SelectionCircuit {
+    fn calc_hash(&self) -> Fr {
+        self.hash.clone()
+    }
+}
+
 use ark_mnt4_298::constraints::{G2Var as MNT4G2Var, G1Var as MNT4G1Var};
 use ark_r1cs_std::groups::CurveVar;
 use ark_ec::AffineCurve;
@@ -1010,7 +1032,7 @@ impl ConstraintSynthesizer<MNT6Fr> for SelectionCircuit {
 
         let bools = idx_gadget.to_bits_le()?;
 
-        println!("bools {:?}", bools.value().unwrap());
+        // println!("bools {:?}", bools.value().unwrap());
 
         let keys : Vec<_> = self.keys.iter().map(|vk| {
             let VerifyingKey {
@@ -1052,11 +1074,24 @@ impl ConstraintSynthesizer<MNT6Fr> for SelectionCircuit {
         .enforce_equal(&Boolean::constant(true))
         .unwrap();
 
-        println!("Working: {}", cs.is_satisfied().unwrap());
+        // println!("Working: {}", cs.is_satisfied().unwrap());
 
         println!("recursive circuit has {} constraints", cs.num_constraints());
 
         Ok(())
+    }
+}
+
+fn make_circuits<C: InstructionCircuit>(circuits: &mut Vec<SelectionCircuit>, lst: &[C], keys: &[(InnerSNARKPK, InnerSNARKVK)], idx: usize) {
+    let mut rng = test_rng();
+    for i in lst {
+        let proof = InnerSNARK::prove(&keys[idx].0, i.clone(), &mut rng).unwrap();
+        circuits.push(SelectionCircuit {
+            hash : i.calc_hash().clone(),
+            proof: proof,
+            keys: keys.iter().map(|a| a.1.clone()).collect(),
+            idx: idx as u32,
+        });
     }
 }
 
@@ -1125,7 +1160,28 @@ fn main() {
             idx: 12,
         };
 
-        test_circuit2(circuit);
+        let (pk, vk) = OuterSNARK::setup(circuit.clone(), &mut rng).unwrap();
+        println!("Testing prove");
+        let proof = OuterSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+        println!("proof: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![circuit.hash.clone()]), &proof).unwrap());
+
+        // First step is proving all instructions and then making them uniform
+        let mut circuits = vec![];
+
+        make_circuits(&mut circuits, &c.add, &keys, 0);
+        make_circuits(&mut circuits, &c.sub, &keys, 1);
+        make_circuits(&mut circuits, &c.gt, &keys, 2);
+        make_circuits(&mut circuits, &c.constant, &keys, 3);
+        make_circuits(&mut circuits, &c.get, &keys, 4);
+        make_circuits(&mut circuits, &c.set, &keys, 5);
+        make_circuits(&mut circuits, &c.loopi, &keys, 6);
+        make_circuits(&mut circuits, &c.endi, &keys, 7);
+        make_circuits(&mut circuits, &c.breakno, &keys, 8);
+        make_circuits(&mut circuits, &c.breakyes, &keys, 9);
+
+        // setup recursive circuits
+
+        // test_circuit2(circuit);
         /*
         test_circuit(c.sub[0].clone());
         test_circuit(c.gt[0].clone());
