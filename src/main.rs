@@ -953,6 +953,13 @@ fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     circuit.generate_constraints(cs);
 }
 
+fn test_circuit2<T: ConstraintSynthesizer<MNT6Fr>>(circuit: T) {
+    let cs_sys = ConstraintSystem::<MNT6Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    println!("Testing circuit");
+    circuit.generate_constraints(cs);
+}
+
 fn setup_circuit<T: InstructionCircuit>(circuit: T) -> (InnerSNARKPK, InnerSNARKVK) {
     let mut rng = test_rng();
     println!("Setting up circuit");
@@ -976,6 +983,7 @@ use ark_r1cs_std::groups::CurveVar;
 use ark_ec::AffineCurve;
 use ark_groth16::constraints::VerifyingKeyVar;
 use ark_r1cs_std::prelude::CondSelectGadget;
+use ark_r1cs_std::R1CSVar;
 
 impl ConstraintSynthesizer<MNT6Fr> for SelectionCircuit {
     fn generate_constraints(
@@ -1002,6 +1010,8 @@ impl ConstraintSynthesizer<MNT6Fr> for SelectionCircuit {
 
         let bools = idx_gadget.to_bits_le()?;
 
+        println!("bools {:?}", bools.value().unwrap());
+
         let keys : Vec<_> = self.keys.iter().map(|vk| {
             let VerifyingKey {
                 alpha_g1,
@@ -1026,7 +1036,12 @@ impl ConstraintSynthesizer<MNT6Fr> for SelectionCircuit {
             vk_gadget
         }).collect();
 
-        let vk_gadget = VerifyingKeyVar::conditionally_select_power_of_two_vector(&bools, &keys).unwrap();
+        let mut bools2 = vec![];
+        for i in bools[0..4].iter().rev() {
+            bools2.push(i.clone())
+        }
+
+        let vk_gadget = VerifyingKeyVar::conditionally_select_power_of_two_vector(&bools2, &keys).unwrap();
 
         <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
@@ -1092,6 +1107,25 @@ fn main() {
         keys.push(setup_circuit(c.endi[0].clone()));
         keys.push(setup_circuit(c.breakno[0].clone()));
         keys.push(setup_circuit(c.breakyes[0].clone()));
+        keys.push(keys[0].clone());
+        keys.push(keys[0].clone());
+        keys.push(keys[0].clone());
+        keys.push(keys[0].clone());
+        keys.push(keys[0].clone());
+        keys.push(keys[0].clone());
+
+        let mut rng = test_rng();
+
+        let proof = InnerSNARK::prove(&keys[0].0, c.add[0].clone(), &mut rng).unwrap();
+
+        let circuit = SelectionCircuit {
+            hash : c.add[0].calc_hash().clone(),
+            proof: proof,
+            keys: keys.iter().map(|a| a.1.clone()).collect(),
+            idx: 12,
+        };
+
+        test_circuit2(circuit);
         /*
         test_circuit(c.sub[0].clone());
         test_circuit(c.gt[0].clone());
