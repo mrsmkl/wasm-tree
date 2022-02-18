@@ -687,6 +687,16 @@ fn convert_inputs(inputs: &[Fr]) -> Vec<MNT6Fr> {
         .collect::<Vec<_>>()
 }
 
+fn convert_inputs2(inputs: &[MNT6Fr]) -> Vec<Fr> {
+    inputs
+        .iter()
+        .map(|input| {
+            Fr::from_repr(input
+                .into_repr()).unwrap()
+        })
+        .collect::<Vec<_>>()
+}
+
 fn mnt6(input: &Fr) -> MNT6Fr {
     MNT6Fr::from_repr(input.into_repr()).unwrap()
 }
@@ -825,6 +835,42 @@ fn aggregate_level1<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> Inn
 
     println!("proof1: {}", InnerSNARK::verify(&setup.vk, &vec![hash1.clone()], &proof1).unwrap());
     println!("proof2: {}", InnerSNARK::verify(&setup.vk, &vec![hash2.clone()], &proof2).unwrap());
+    println!(
+        "proof hash: {}",
+        InnerSNARK::verify(&setup.hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
+    );
+
+    InnerAggregationCircuit {
+        a: hash1,
+        b: hash2,
+        c: hash3,
+        proof1: proof1,
+        proof2: proof2,
+        proof_hash: proof_hash,
+        vk: setup.vk.clone(),
+        hash_vk: setup.hash_vk.clone(),
+    }
+}
+
+fn aggregate_level3<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> InnerAggregationCircuit {
+    let mut rng = test_rng();
+    let hash1 = a.calc_hash();
+    let hash2 = b.calc_hash();
+
+    let hash_circuit = HashCircuit {
+        a: hash1,
+        b: hash2,
+        params: setup.params.clone(),
+    };
+
+    let proof1 = InnerSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let proof2 = InnerSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+    let proof_hash = InnerSNARK::prove(&setup.hash_pk, hash_circuit.clone(), &mut rng).unwrap();
+
+    let hash3 = hash_circuit.calc_hash();
+
+    println!("proof1: {}", InnerSNARK::verify(&setup.vk, &convert_inputs2(&vec![mnt6(&hash1)]), &proof1).unwrap());
+    println!("proof2: {}", InnerSNARK::verify(&setup.vk, &convert_inputs2(&vec![mnt6(&hash2)]), &proof2).unwrap());
     println!(
         "proof hash: {}",
         InnerSNARK::verify(&setup.hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
@@ -1158,7 +1204,7 @@ fn outer_to_inner<C: InstructionCircuit2>(circuit: &C, setup: &OuterSetup, hash_
 fn inner_to_outer<C: InstructionCircuit>(circuit: &C, setup: &InnerSetup) ->
     (InnerAggregationCircuit, OuterSetup) {
     let mut rng = test_rng();
-    let agg_circuit1 = aggregate_level1(circuit.clone(), circuit.clone(), setup);
+    let agg_circuit1 = aggregate_level3(circuit.clone(), circuit.clone(), setup);
     let (pk, vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
 
     let setup2 = OuterSetup {
@@ -1205,6 +1251,8 @@ fn main() {
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
+
+        handle_recursive_groth(c.add.clone());
 
         let mut keys = vec![];
         keys.push(setup_circuit(c.add[0].clone()));
