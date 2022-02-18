@@ -592,6 +592,8 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregationCircuit {
             InnerSNARK,
         >>::InputVar::new_input(ns!(cs, "public_input"), || Ok(vec![self.c.clone()])).unwrap();
 
+        // println!("inner public var {:?}", public_var);
+
         let input1_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
             <MNT4PairingEngine as PairingEngine>::Fq,
@@ -727,8 +729,8 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
             <MNT6PairingEngine as PairingEngine>::Fr,
             <MNT6PairingEngine as PairingEngine>::Fq,
             OuterSNARK,
-        >>::InputVar::new_input(ns!(cs, "public_input"), || Ok(vec![mnt6(&self.c)])).unwrap();
-    
+        >>::InputVar::new_witness(ns!(cs, "public_input"), || Ok(vec![mnt6(&self.c)])).unwrap();
+
         let input1_gadget = <OuterSNARKGadget as SNARKGadget<
             <MNT6PairingEngine as PairingEngine>::Fr,
             <MNT6PairingEngine as PairingEngine>::Fq,
@@ -741,7 +743,17 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
             OuterSNARK,
         >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![mnt6(&self.b)]))
         .unwrap();
-    
+
+        let input1_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
+
+        println!("Input vecs {}", input1_bool_vec[0].len());
+
+        /*
+        input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0])?;
+        input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1])?;
+        input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2])?;
+        */
+
         // inputs for hashing
         let a_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(self.a.clone())).unwrap(),
@@ -750,7 +762,7 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(self.b.clone())).unwrap(),
         );
         let c_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(self.c.clone())).unwrap(),
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.c.clone())).unwrap(),
         );
         let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(self.params.clone())).unwrap();
         let mut inputs = Vec::new();
@@ -869,12 +881,24 @@ fn aggregate_level3<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> Inn
 
     let hash3 = hash_circuit.calc_hash();
 
-    println!("proof1: {}", InnerSNARK::verify(&setup.vk, &convert_inputs2(&vec![mnt6(&hash1)]), &proof1).unwrap());
-    println!("proof2: {}", InnerSNARK::verify(&setup.vk, &convert_inputs2(&vec![mnt6(&hash2)]), &proof2).unwrap());
     println!(
         "proof hash: {}",
         InnerSNARK::verify(&setup.hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
     );
+    let outer_input1 = <OuterSNARKGadget as SNARKGadget<
+        <MNT6PairingEngine as PairingEngine>::Fr,
+        <MNT6PairingEngine as PairingEngine>::Fq,
+        OuterSNARK,
+    >>::InputVar::repack_input(&vec![mnt6(&hash1)]);
+    let outer_input2 = <OuterSNARKGadget as SNARKGadget<
+        <MNT6PairingEngine as PairingEngine>::Fr,
+        <MNT6PairingEngine as PairingEngine>::Fq,
+        OuterSNARK,
+    >>::InputVar::repack_input(&vec![mnt6(&hash2)]);
+    println!("outer input1: {} {} {} {}", outer_input1[0], outer_input1[1], hash1, mnt6(&hash1));
+    println!("outer input2: {} {} {} {}", outer_input2[0], outer_input2[1], hash2, mnt6(&hash2));
+    println!("proof1: {}", InnerSNARK::verify(&setup.vk, &outer_input1, &proof1).unwrap());
+    println!("proof2: {}", InnerSNARK::verify(&setup.vk, &outer_input2, &proof2).unwrap());
 
     InnerAggregationCircuit {
         a: hash1,
@@ -967,11 +991,14 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
 
     let (outer_pk, outer_vk) = InnerSNARK::setup(agg_circuit_outer.clone(), &mut rng).unwrap();
     let outer_proof = InnerSNARK::prove(&outer_pk, agg_circuit_outer.clone(), &mut rng).unwrap();
+    /*
     let outer_input = <OuterSNARKGadget as SNARKGadget<
         <MNT6PairingEngine as PairingEngine>::Fr,
         <MNT6PairingEngine as PairingEngine>::Fq,
         OuterSNARK,
-        >>::InputVar::repack_input(&vec![mnt6(&hash5)]);
+    >>::InputVar::repack_input(&vec![mnt6(&hash5)]);
+    */
+    let outer_input = vec![hash5];
     println!("outer proof: {}", InnerSNARK::verify(&outer_vk, &outer_input, &outer_proof).unwrap());
 
 }
@@ -1287,6 +1314,7 @@ fn main() {
         println!("Testing prove");
         let proof = OuterSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
         println!("proof: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![circuit.hash.clone()]), &proof).unwrap());
+        println!("select key {}", vk.gamma_abc_g1.len());
 
         // First step is proving all instructions and then making them uniform
         /*
@@ -1319,7 +1347,9 @@ fn main() {
         };
 
         let (agg_circuit1, setup2) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
+        println!("first level {}", setup2.vk.gamma_abc_g1.len());
         let (agg_circuit2, setup3) = inner_to_outer(&agg_circuit1, &setup2);
+
         /* = aggregate_level2(circuit.clone(), circuit.clone(), &setup1);
         let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
 
