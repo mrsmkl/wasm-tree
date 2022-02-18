@@ -842,6 +842,34 @@ fn aggregate_level1<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> Inn
     }
 }
 
+struct OuterSetup {
+    pub pk: OuterSNARKPK,
+    pub vk: OuterSNARKVK,
+    pub params: PoseidonParameters<Fr>,
+}
+
+fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> OuterAggregationCircuit {
+    let mut rng = test_rng();
+    let hash1 = a.calc_hash();
+    let hash2 = b.calc_hash();
+
+    let proof1 = OuterSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let proof2 = OuterSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+
+    println!("proof1: {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
+    println!("proof2: {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash2.clone()]), &proof2).unwrap());
+
+    OuterAggregationCircuit {
+        a: hash1,
+        b: hash2,
+        c: hash(&setup.params, &hash1, &hash2),
+        proof1: proof1,
+        proof2: proof2,
+        vk: setup.vk.clone(),
+        params: setup.params.clone(),
+    }
+}
+
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let mut rng = test_rng();
 
@@ -1110,6 +1138,38 @@ fn make_circuits<C: InstructionCircuit>(circuits: &mut Vec<SelectionCircuit>, ls
     }
 }
 
+fn outer_to_inner<C: InstructionCircuit2>(circuit: &C, setup: &OuterSetup, hash_pk: &InnerSNARKPK, hash_vk: &InnerSNARKVK) ->
+    (OuterAggregationCircuit, InnerSetup) {
+    let mut rng = test_rng();
+    let agg_circuit1 = aggregate_level2(circuit.clone(), circuit.clone(), setup);
+    let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
+
+    let setup2 = InnerSetup {
+        pk,
+        vk,
+        hash_pk: hash_pk.clone(),
+        hash_vk: hash_vk.clone(),
+        params: setup.params.clone(),
+    };
+
+    (agg_circuit1, setup2)
+}
+
+fn inner_to_outer<C: InstructionCircuit>(circuit: &C, setup: &InnerSetup) ->
+    (InnerAggregationCircuit, OuterSetup) {
+    let mut rng = test_rng();
+    let agg_circuit1 = aggregate_level1(circuit.clone(), circuit.clone(), setup);
+    let (pk, vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
+
+    let setup2 = OuterSetup {
+        pk,
+        vk,
+        params: setup.params.clone(),
+    };
+
+    (agg_circuit1, setup2)
+}
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
@@ -1181,6 +1241,7 @@ fn main() {
         println!("proof: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![circuit.hash.clone()]), &proof).unwrap());
 
         // First step is proving all instructions and then making them uniform
+        /*
         let mut circuits = vec![];
 
         make_circuits(&mut circuits, &c.add, &keys, 0);
@@ -1193,6 +1254,7 @@ fn main() {
         make_circuits(&mut circuits, &c.endi, &keys, 7);
         make_circuits(&mut circuits, &c.breakno, &keys, 8);
         make_circuits(&mut circuits, &c.breakyes, &keys, 9);
+        */
 
         // setup recursive circuits
         let hash_circuit = HashCircuit {
@@ -1201,6 +1263,25 @@ fn main() {
             params: params.clone(),
         };
         let (hash_pk, hash_vk) = InnerSNARK::setup(hash_circuit.clone(), &mut rng).unwrap();
+
+        let setup1 = OuterSetup {
+            pk,
+            vk,
+            params: params.clone(),
+        };
+
+        let (agg_circuit1, setup2) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
+        let (agg_circuit2, setup3) = inner_to_outer(&agg_circuit1, &setup2);
+        /* = aggregate_level2(circuit.clone(), circuit.clone(), &setup1);
+        let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
+
+        let setup2 = InnerSetup {
+            pk,
+            vk,
+            hash_pk: hash_pk.clone(),
+            hash_vk: hash_vk.clone(),
+            params: params.clone(),
+        };*/
 
         // test_circuit2(circuit);
         /*
