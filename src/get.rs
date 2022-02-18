@@ -13,9 +13,9 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 
-use crate::{VM,hash_list,hash_code};
+use crate::{VM,hash_list,hash_code,InstructionCircuit};
 
-use ark_r1cs_std::R1CSVar;
+// use ark_r1cs_std::R1CSVar;
 
 #[derive(Debug, Clone)]
 pub struct GetCircuit {
@@ -25,8 +25,8 @@ pub struct GetCircuit {
     pub idx: u32,
 }
 
-impl GetCircuit {
-    pub fn calc_hash(&self) -> Fr {
+impl InstructionCircuit for GetCircuit {
+    fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
@@ -90,7 +90,7 @@ impl ConstraintSynthesizer<Fr> for GetCircuit {
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
         println!("pc hash {}", hash_code(&self.params, &before.pc));
-        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+        // println!("pc hash {}", hash_pc_gadget.value().unwrap());
         
         let mut inputs_stack_after = Vec::new();
         inputs_stack_after.push(read_var.clone());
@@ -100,7 +100,7 @@ impl ConstraintSynthesizer<Fr> for GetCircuit {
         let hash_stack_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_stack_after).unwrap();
 
         println!("stack after {}", hash_list(&self.params, &after.expr_stack.iter().map(|a| Fr::from(*a)).collect::<Vec<Fr>>()));
-        println!("stack after {}", hash_stack_after_gadget.value().unwrap());
+        // println!("stack after {}", hash_stack_after_gadget.value().unwrap());
 
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -126,7 +126,7 @@ impl ConstraintSynthesizer<Fr> for GetCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        // println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

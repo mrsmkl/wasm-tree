@@ -15,7 +15,7 @@ use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::fields::FieldVar;
 use std::cmp::Ordering;
 
-use crate::{VM,hash_code};
+use crate::{VM,hash_code,InstructionCircuit};
 
 #[derive(Debug, Clone)]
 pub struct BreakYesCircuit {
@@ -24,8 +24,8 @@ pub struct BreakYesCircuit {
     pub params: PoseidonParameters<Fr>,
 }
 
-impl BreakYesCircuit {
-    pub fn calc_hash(&self) -> Fr {
+impl InstructionCircuit for BreakYesCircuit {
+    fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
@@ -33,7 +33,7 @@ impl BreakYesCircuit {
     }
 }
 
-use ark_r1cs_std::R1CSVar;
+// use ark_r1cs_std::R1CSVar;
 
 impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
     fn generate_constraints(
@@ -117,16 +117,16 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
         ]).unwrap();
 
         println!("pc before hash {}", hash_code(&self.params, &before.pc));
-        println!("pc before hash {}", hash_pc_before_var.value().unwrap());
+        // println!("pc before hash {}", hash_pc_before_var.value().unwrap());
 
         println!("control before hash {}", before.hash_control(&self.params));
-        println!("control before hash {}", control_before_var.value().unwrap());
+        // println!("control before hash {}", control_before_var.value().unwrap());
 
         println!("stack before hash {}", before.hash_stack(&self.params));
-        println!("stack before hash {}", stack_before_var.value().unwrap());
+        // println!("stack before hash {}", stack_before_var.value().unwrap());
 
         println!("pc after hash {}", hash_code(&self.params, &after.pc));
-        println!("pc after hash {}", start_var.value().unwrap());
+        // println!("pc after hash {}", start_var.value().unwrap());
 
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -152,7 +152,7 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        // println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

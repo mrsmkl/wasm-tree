@@ -49,6 +49,10 @@ use ark_r1cs_std::boolean::AllocatedBool;
 trait HashField : Absorb + PrimeField {
 }
 
+trait InstructionCircuit : ConstraintSynthesizer<Fr> + Clone {
+    fn calc_hash(&self) -> Fr;
+}
+
 fn get_file(fname: String) -> Vec<u8> {
     let mut file = File::open(&fname).unwrap();
     let mut buffer = Vec::<u8>::new();
@@ -949,6 +953,124 @@ fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     circuit.generate_constraints(cs);
 }
 
+fn setup_circuit<T: InstructionCircuit>(circuit: T) -> (InnerSNARKPK, InnerSNARKVK) {
+    let mut rng = test_rng();
+    println!("Setting up circuit");
+    let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
+    println!("Testing prove");
+    let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    println!("proof: {}", InnerSNARK::verify(&vk, &vec![circuit.calc_hash().clone()], &proof).unwrap());
+    (pk, vk)
+}
+
+#[derive(Debug, Clone)]
+struct InnerAggregationCircuit {
+    a : Fr,
+    b : Fr,
+    c : Fr,
+    proof1: InnerSNARKProof,
+    proof2: InnerSNARKProof,
+    proof_hash: InnerSNARKProof,
+    vk: InnerSNARKVK,
+    hash_vk: InnerSNARKVK,
+}
+
+impl ConstraintSynthesizer<MNT6Fr> for InnerAggregationCircuit {
+    fn generate_constraints(
+        self,
+        cs: ConstraintSystemRef<MNT6Fr>,
+    ) -> Result<(), SynthesisError> {
+        let public_var = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_input(ns!(cs, "public_input"), || Ok(vec![self.c.clone()])).unwrap();
+
+        let input1_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.a.clone()]))
+        .unwrap();
+        let input2_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.b.clone()]))
+        .unwrap();
+        let input_hash_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.a.clone(), self.b.clone(), self.c.clone()]))
+        .unwrap();
+
+        let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
+        let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
+        let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
+        let input_hash_bool_vec = input_hash_gadget.clone().into_iter().collect::<Vec<_>>();
+
+        println!("Input vecs {} {} {}", input1_bool_vec[0].len(), input2_bool_vec[0].len(), input3_bool_vec[0].len());
+
+        input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0])?;
+        input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1])?;
+        input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2])?;
+
+        let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof1))
+        .unwrap();
+        let proof2_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof2))
+        .unwrap();
+        let proof_hash_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof_hash))
+        .unwrap();
+        let vk_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), self.vk.clone())
+        .unwrap();
+        let hash_vk_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_hash_vk"), self.hash_vk.clone())
+        .unwrap();
+        <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::verify(&vk_gadget, &input1_gadget, &proof1_gadget)
+        .unwrap()
+        .enforce_equal(&Boolean::constant(true))
+        .unwrap();
+        InnerSNARKGadget::verify(&vk_gadget, &input2_gadget, &proof2_gadget)
+        .unwrap()
+        .enforce_equal(&Boolean::constant(true))
+        .unwrap();
+        InnerSNARKGadget::verify(&hash_vk_gadget, &input_hash_gadget, &proof_hash_gadget)
+        .unwrap()
+        .enforce_equal(&Boolean::constant(true))
+        .unwrap();
+
+        // println!("Working: {}", cs.is_satisfied().unwrap());
+
+        println!("recursive circuit has {} constraints", cs.num_constraints());
+
+        Ok(())
+    }
+}
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
@@ -985,6 +1107,17 @@ fn main() {
             // println!("vm state {:?}", vm);
         }
 
+        let mut keys = vec![];
+        keys.push(setup_circuit(c.add[0].clone()));
+        keys.push(setup_circuit(c.sub[0].clone()));
+        keys.push(setup_circuit(c.gt[0].clone()));
+        keys.push(setup_circuit(c.constant[0].clone()));
+        keys.push(setup_circuit(c.get[0].clone()));
+        keys.push(setup_circuit(c.set[0].clone()));
+        keys.push(setup_circuit(c.loopi[0].clone()));
+        keys.push(setup_circuit(c.endi[0].clone()));
+        keys.push(setup_circuit(c.breakno[0].clone()));
+        keys.push(setup_circuit(c.breakyes[0].clone()));
         /*
         test_circuit(c.sub[0].clone());
         test_circuit(c.gt[0].clone());
@@ -994,10 +1127,9 @@ fn main() {
         test_circuit(c.loopi[0].clone());
         test_circuit(c.endi[0].clone());
         test_circuit(c.breakno[0].clone());
-        */
         test_circuit(c.breakyes[0].clone());
-
-        // handle_recursive_groth(c.add)
+        handle_recursive_groth(c.add)
+        */
     }
 
 }

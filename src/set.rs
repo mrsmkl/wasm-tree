@@ -14,8 +14,9 @@ use ark_sponge::poseidon::PoseidonParameters;
 use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 
 use crate::{VM,hash_code};
+use crate::InstructionCircuit;
 
-use ark_r1cs_std::R1CSVar;
+// use ark_r1cs_std::R1CSVar;
 
 #[derive(Debug, Clone)]
 pub struct SetCircuit {
@@ -25,8 +26,8 @@ pub struct SetCircuit {
     pub idx: usize,
 }
 
-impl SetCircuit {
-    pub fn calc_hash(&self) -> Fr {
+impl InstructionCircuit for SetCircuit {
+    fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
@@ -97,10 +98,10 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
         let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
     
         println!("stack before {}", before.hash_stack(&self.params));
-        println!("stack before {}", stack_before_var.value().unwrap());
+        // println!("stack before {}", stack_before_var.value().unwrap());
         
         println!("pc hash {}", hash_code(&self.params, &before.pc));
-        println!("pc hash {}", hash_pc_gadget.value().unwrap());
+        // println!("pc hash {}", hash_pc_gadget.value().unwrap());
         
         // Compute VM hash before
         let mut inputs_vm_before = Vec::new();
@@ -126,7 +127,7 @@ impl ConstraintSynthesizer<Fr> for SetCircuit {
     
         println!("Made circuit");
         println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-        println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        // println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
         Ok(())
     }

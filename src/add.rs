@@ -13,6 +13,7 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 
 use crate::{VM,hash_list,hash_code};
+use crate::InstructionCircuit;
 
 #[derive(Debug, Clone)]
 pub struct AddCircuit {
@@ -21,8 +22,8 @@ pub struct AddCircuit {
     pub params: PoseidonParameters<Fr>,
 }
 
-impl AddCircuit {
-    pub fn calc_hash(&self) -> Fr {
+impl InstructionCircuit for AddCircuit {
+    fn calc_hash(&self) -> Fr {
         let mut inputs = vec![];
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
