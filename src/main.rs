@@ -798,8 +798,15 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
     }
 }
 
-fn aggregate_level1(a: AddCircuit, b: AddCircuit, pk: &InnerSNARKPK, hash_pk: &InnerSNARKPK,
-    vk: &InnerSNARKVK, hash_vk: &InnerSNARKVK) -> (InnerAggregationCircuit, Fr) {
+struct InnerSetup {
+    pub pk: InnerSNARKPK,
+    pub hash_pk: InnerSNARKPK,
+    pub vk: InnerSNARKVK,
+    pub hash_vk: InnerSNARKVK, 
+    pub params: PoseidonParameters<Fr>,
+}
+
+fn aggregate_level1<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> InnerAggregationCircuit {
     let mut rng = test_rng();
     let hash1 = a.calc_hash();
     let hash2 = b.calc_hash();
@@ -807,34 +814,32 @@ fn aggregate_level1(a: AddCircuit, b: AddCircuit, pk: &InnerSNARKPK, hash_pk: &I
     let hash_circuit = HashCircuit {
         a: hash1,
         b: hash2,
-        params: a.params.clone(),
+        params: setup.params.clone(),
     };
 
-    let proof1 = InnerSNARK::prove(&pk, a.clone(), &mut rng).unwrap();
-    let proof2 = InnerSNARK::prove(&pk, b.clone(), &mut rng).unwrap();
-    let proof_hash = InnerSNARK::prove(&hash_pk, hash_circuit.clone(), &mut rng).unwrap();
+    let proof1 = InnerSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let proof2 = InnerSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+    let proof_hash = InnerSNARK::prove(&setup.hash_pk, hash_circuit.clone(), &mut rng).unwrap();
 
     let hash3 = hash_circuit.calc_hash();
 
-    println!("proof1: {}", InnerSNARK::verify(&vk, &vec![hash1.clone()], &proof1).unwrap());
-    println!("proof2: {}", InnerSNARK::verify(&vk, &vec![hash2.clone()], &proof2).unwrap());
+    println!("proof1: {}", InnerSNARK::verify(&setup.vk, &vec![hash1.clone()], &proof1).unwrap());
+    println!("proof2: {}", InnerSNARK::verify(&setup.vk, &vec![hash2.clone()], &proof2).unwrap());
     println!(
         "proof hash: {}",
-        InnerSNARK::verify(&hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
+        InnerSNARK::verify(&setup.hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
     );
 
-    let agg_circuit = InnerAggregationCircuit {
+    InnerAggregationCircuit {
         a: hash1,
         b: hash2,
         c: hash3,
         proof1: proof1,
         proof2: proof2,
         proof_hash: proof_hash,
-        vk: vk.clone(),
-        hash_vk: hash_vk.clone(),
-    };
-
-    (agg_circuit, hash3)
+        vk: setup.vk.clone(),
+        hash_vk: setup.hash_vk.clone(),
+    }
 }
 
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
@@ -853,8 +858,18 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let (pk, vk) = InnerSNARK::setup(a[0].clone(), &mut rng).unwrap();
     let (hash_pk, hash_vk) = InnerSNARK::setup(hash_circuit.clone(), &mut rng).unwrap();
 
-    let (agg_circuit1, hash3) = aggregate_level1(a[0].clone(), a[1].clone(), &pk, &hash_pk, &vk, &hash_vk);
-    let (agg_circuit2, hash4) = aggregate_level1(a[2].clone(), a[3].clone(), &pk, &hash_pk, &vk, &hash_vk);
+    let setup = InnerSetup {
+        pk,
+        hash_pk,
+        vk,
+        hash_vk, 
+        params: params.clone(),
+    };
+
+    let agg_circuit1 = aggregate_level1(a[0].clone(), a[1].clone(), &setup);
+    let agg_circuit2 = aggregate_level1(a[2].clone(), a[3].clone(), &setup);
+    let hash3 = agg_circuit1.c;
+    let hash4 = agg_circuit2.c;
 
     let (inner_pk, inner_vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
 
@@ -1180,6 +1195,12 @@ fn main() {
         make_circuits(&mut circuits, &c.breakyes, &keys, 9);
 
         // setup recursive circuits
+        let hash_circuit = HashCircuit {
+            a: Fr::from(0),
+            b: Fr::from(0),
+            params: params.clone(),
+        };
+        let (hash_pk, hash_vk) = InnerSNARK::setup(hash_circuit.clone(), &mut rng).unwrap();
 
         // test_circuit2(circuit);
         /*
