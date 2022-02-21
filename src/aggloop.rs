@@ -1,4 +1,3 @@
-
 // Aggregating merkle loop circuits
 
 use ark_crypto_primitives::crh::poseidon::{ /* TwoToOneCRH, */ CRH};
@@ -53,6 +52,18 @@ use crate::OuterSNARKVK;
 use crate::OuterSNARKProof;
 use crate::InnerSNARKVK;
 use crate::InnerSNARKProof;
+use crate::OuterSNARKPK;
+use crate::InnerSNARKPK;
+
+pub trait LoopCircuit : ConstraintSynthesizer<Fr> + Clone {
+    fn get_inputs(&self) -> Vec<Fr>;
+    fn get(&self) -> (Fr, Fr, Fr);
+}
+
+pub trait LoopCircuit2 : ConstraintSynthesizer<MNT6Fr> + Clone {
+    fn get_inputs(&self) -> Vec<MNT6Fr>;
+    fn get(&self) -> (Fr, Fr, Fr);
+}
 
 #[derive(Debug, Clone)]
 struct InnerAggregateLoop {
@@ -65,13 +76,14 @@ struct InnerAggregateLoop {
     vk: InnerSNARKVK,
 }
 
-/*
-impl InnerAggregateLoop {
-    fn calc_hash(&self) -> Fr {
-        self.c.clone()
+impl LoopCircuit2 for InnerAggregateLoop {
+    fn get_inputs(&self) -> Vec<MNT6Fr> {
+        vec![mnt6(&self.start_st), mnt6(&self.end_st), mnt6(&self.root)]
+    }
+    fn get(&self) -> (Fr,Fr,Fr) {
+        (self.start_st.clone(), self.end_st.clone(), self.root.clone())
     }
 }
-*/
 
 impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
     fn generate_constraints(
@@ -181,15 +193,14 @@ struct OuterAggregateLoop {
     vk: OuterSNARKVK,
 }
 
-/*
-impl InstructionCircuit for OuterAggregateLoop {
-    fn calc_hash(&self) -> Fr {
-        self.c.clone()
+impl LoopCircuit for OuterAggregateLoop {
+    fn get_inputs(&self) -> Vec<Fr> {
+        vec![self.start_st.clone(), self.end_st.clone(), self.root.clone()]
     }
-    fn transition(&self) -> Transition {
-        panic!("no transitions here...");
+    fn get(&self) -> (Fr,Fr,Fr) {
+        (self.start_st.clone(), self.end_st.clone(), self.root.clone())
     }
-}*/
+}
 
 impl ConstraintSynthesizer<Fr> for OuterAggregateLoop {
     fn generate_constraints(
@@ -270,4 +281,104 @@ impl ConstraintSynthesizer<Fr> for OuterAggregateLoop {
         println!("recursive circuit has {} constraints", cs.num_constraints());
         Ok(())
     }
+}
+
+#[derive(Debug, Clone)]
+struct InnerSetup {
+    pub pk: InnerSNARKPK,
+    pub vk: InnerSNARKVK,
+}
+
+fn aggregate_level1<C:LoopCircuit>(a: C, b: C, setup: &InnerSetup) -> InnerAggregateLoop {
+    let mut rng = test_rng();
+
+    let proof1 = InnerSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let proof2 = InnerSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+
+    println!("proof1: {}", InnerSNARK::verify(&setup.vk, &a.get_inputs(), &proof1).unwrap());
+    println!("proof2: {}", InnerSNARK::verify(&setup.vk, &b.get_inputs(), &proof2).unwrap());
+
+    let (start_st,mid_st,root) = a.get();
+    let (_,end_st,root) = b.get();
+
+    InnerAggregateLoop {
+        start_st,
+        mid_st,
+        end_st,
+        root,
+        proof1: proof1,
+        proof2: proof2,
+        vk: setup.vk.clone(),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OuterSetup {
+    pub pk: OuterSNARKPK,
+    pub vk: OuterSNARKVK,
+}
+
+fn aggregate_level2<C:LoopCircuit2>(a: C, b: C, setup: &OuterSetup) -> OuterAggregateLoop {
+    let mut rng = test_rng();
+
+    let proof1 = OuterSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let proof2 = OuterSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+
+    println!("proof1: {}", OuterSNARK::verify(&setup.vk, &a.get_inputs(), &proof1).unwrap());
+    println!("proof2: {}", OuterSNARK::verify(&setup.vk, &b.get_inputs(), &proof2).unwrap());
+
+    let (start_st,mid_st,root) = a.get();
+    let (_,end_st,root) = b.get();
+
+    OuterAggregateLoop {
+        start_st,
+        mid_st,
+        end_st,
+        root,
+        proof1: proof1,
+        proof2: proof2,
+        vk: setup.vk.clone(),
+    }
+}
+
+fn outer_to_inner<C: LoopCircuit2>(circuit: &C, setup: &OuterSetup) -> (OuterAggregateLoop, InnerSetup) {
+    let mut rng = test_rng();
+    let agg_circuit1 = aggregate_level2(circuit.clone(), circuit.clone(), setup);
+    let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
+
+    let setup2 = InnerSetup {
+        pk,
+        vk,
+    };
+
+    (agg_circuit1, setup2)
+}
+
+fn inner_to_outer<C: LoopCircuit>(circuit: &C, setup: &InnerSetup) -> (InnerAggregateLoop, OuterSetup) {
+    let mut rng = test_rng();
+    let agg_circuit1 = aggregate_level1(circuit.clone(), circuit.clone(), setup);
+    let (pk, vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
+
+    let setup2 = OuterSetup {
+        pk,
+        vk,
+    };
+
+    (agg_circuit1, setup2)
+}
+
+fn aggregate_list2<C: LoopCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<OuterAggregateLoop> {
+    let mut level1 = vec![];
+    for i in 0..circuit.len()/2 {
+        level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+    }
+    level1
+}
+
+fn aggregate_list1<C: LoopCircuit>(circuit: &[C], setup: &InnerSetup) -> Vec<InnerAggregateLoop> {
+    let mut level1 = vec![];
+    for i in 0..circuit.len()/2 {
+        level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+    }
+    level1
 }

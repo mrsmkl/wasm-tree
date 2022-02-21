@@ -19,6 +19,7 @@ use crate::{VM,Transition,hash_list,hash_code,hash_pair};
 use crate::InstructionCircuit;
 
 use ark_r1cs_std::R1CSVar;
+use crate::aggloop::LoopCircuit;
 
 fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: &[Fr], root: FpVar<Fr>, selectors: &[bool]) -> FpVar<Fr> {
 
@@ -98,9 +99,12 @@ struct MerkleLoop {
     selectors: Vec<Vec<bool>>,
 }
 
-impl MerkleLoop {
+impl LoopCircuit for MerkleLoop {
     fn get_inputs(&self) -> Vec<Fr> {
         vec![self.leafs[0].clone(), self.leafs[self.leafs.len()-1].clone(), self.root.clone()]
+    }
+    fn get(&self) -> (Fr,Fr,Fr) {
+        (self.leafs[0].clone(), self.leafs[self.leafs.len()-1].clone(), self.root.clone())
     }
 }
 
