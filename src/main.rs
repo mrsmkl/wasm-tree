@@ -1141,7 +1141,7 @@ fn main() {
             breakno: vec![],
             breakyes: vec![],
         };
-        for i in 0..32 {
+        for i in 0..4 {
             vm.step(&params, &mut c);
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
