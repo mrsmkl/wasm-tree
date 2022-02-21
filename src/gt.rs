@@ -16,7 +16,7 @@ use ark_sponge::poseidon::PoseidonParameters;
 
 use std::cmp::Ordering;
 
-use crate::{VM,hash_list,hash_code, hash_many};
+use crate::{VM,Transition,hash_list,hash_code, hash_many};
 use crate::InstructionCircuit;
 
 #[derive(Debug, Clone)]
@@ -32,6 +32,9 @@ impl InstructionCircuit for GtCircuit {
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
         CRH::<Fr>::evaluate(&self.params, inputs).unwrap()
+    }
+    fn transition(&self) -> Transition {
+        Transition { before: self.before.clone(), after: self.after.clone() }
     }
 }
 

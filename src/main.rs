@@ -49,8 +49,15 @@ use ark_r1cs_std::boolean::AllocatedBool;
 trait HashField : Absorb + PrimeField {
 }
 
+#[derive(Debug, Clone)]
+pub struct Transition {
+    pub before: VM,
+    pub after: VM,
+}
+
 trait InstructionCircuit : ConstraintSynthesizer<Fr> + Clone {
     fn calc_hash(&self) -> Fr;
+    fn transition(&self) -> Transition;
 }
 
 trait InstructionCircuit2 : ConstraintSynthesizer<MNT6Fr> + Clone {
@@ -302,6 +309,7 @@ pub struct VM {
     pub locals : Vec<u32>,
     pub control_stack: Vec<ControlFrame>,
     pub pc: Vec<CodeTree>,
+    pub step_counter: u32,
 }
 
 pub mod add;
@@ -346,6 +354,7 @@ impl VM {
             expr_stack: vec![],
             control_stack: vec![],
             locals: vec![0; 2],
+            step_counter: 0,
         }
     }
 
@@ -381,6 +390,7 @@ impl VM {
         let elen = self.expr_stack.len();
         let clen = self.control_stack.len();
         let before = self.clone();
+        self.step_counter = self.step_counter + 1;
         match &self.pc[0] {
             CAdd => {
                 let p1 = self.expr_stack[elen - 1];
@@ -718,6 +728,9 @@ impl InstructionCircuit for OuterAggregationCircuit {
     fn calc_hash(&self) -> Fr {
         self.c.clone()
     }
+    fn transition(&self) -> Transition {
+        panic!("no transitions here...");
+    }
 }
 
 impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
@@ -993,6 +1006,7 @@ struct SelectionCircuit {
     proof: InnerSNARKProof,
     keys: Vec<InnerSNARKVK>,
     idx: u32,
+    transition: Transition,
 }
 
 impl InstructionCircuit2 for SelectionCircuit {
@@ -1092,6 +1106,7 @@ fn make_circuits<C: InstructionCircuit>(circuits: &mut Vec<SelectionCircuit>, ls
             proof: proof,
             keys: keys.iter().map(|a| a.1.clone()).collect(),
             idx: idx as u32,
+            transition: i.transition(),
         });
     }
 }
@@ -1223,6 +1238,7 @@ fn main() {
             proof: proof,
             keys: keys.iter().map(|a| a.1.clone()).collect(),
             idx: 12,
+            transition: c.add[0].transition(),
         };
 
         let (pk, vk) = OuterSNARK::setup(circuit.clone(), &mut rng).unwrap();

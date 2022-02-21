@@ -15,7 +15,7 @@ use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::fields::FieldVar;
 use std::cmp::Ordering;
 
-use crate::{VM,hash_code,InstructionCircuit};
+use crate::{VM,Transition,hash_code,InstructionCircuit};
 
 #[derive(Debug, Clone)]
 pub struct BreakYesCircuit {
@@ -30,6 +30,9 @@ impl InstructionCircuit for BreakYesCircuit {
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
         CRH::<Fr>::evaluate(&self.params, inputs).unwrap()
+    }
+    fn transition(&self) -> Transition {
+        Transition { before: self.before.clone(), after: self.after.clone() }
     }
 }
 

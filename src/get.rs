@@ -13,7 +13,7 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 
-use crate::{VM,hash_list,hash_code,InstructionCircuit};
+use crate::{VM,Transition,hash_list,hash_code,InstructionCircuit};
 
 // use ark_r1cs_std::R1CSVar;
 
@@ -31,6 +31,9 @@ impl InstructionCircuit for GetCircuit {
         inputs.push(self.before.hash(&self.params));
         inputs.push(self.after.hash(&self.params));
         CRH::<Fr>::evaluate(&self.params, inputs).unwrap()
+    }
+    fn transition(&self) -> Transition {
+        Transition { before: self.before.clone(), after: self.after.clone() }
     }
 }
 
