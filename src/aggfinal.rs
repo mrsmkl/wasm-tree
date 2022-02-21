@@ -104,7 +104,7 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateFinal {
         let root_bool_vec = root_var.to_bits_le().unwrap();
 
         input2_bool_vec[0].enforce_equal(&start_bool_vec)?;
-        input2_bool_vec[0].enforce_equal(&end_bool_vec)?;
+        input2_bool_vec[1].enforce_equal(&end_bool_vec)?;
         input2_bool_vec[2].enforce_equal(&root_bool_vec)?;
 
         input1_bool_vec[0].enforce_equal(&root_bool_vec)?;
