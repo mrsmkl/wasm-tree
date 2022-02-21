@@ -163,8 +163,10 @@ use crate::aggloop::outer_to_inner;
 use crate::aggloop::{aggregate_list1, aggregate_list2};
 use crate::aggloop::LoopCircuit2;
 use crate::OuterSNARK;
+use crate::InnerSNARKProof;
+use crate::InnerSNARKVK;
 
-pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition>) {
+pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition>) -> (InnerSNARKProof, InnerSNARKVK, Fr, Fr) {
     let mut level1 = vec![];
 
     let mut leafs = vec![];
@@ -270,7 +272,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
             let setup = setups2[i].clone();
             let proof1 = InnerSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
             println!("last proof: {}", InnerSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
-            return
+            return (proof1.clone(), setup.vk.clone(), leafs[0].clone(), leafs.last().unwrap().clone())
         }
         prev_level = aggregate_list1(&level2, &setups2[i]);
     }
@@ -281,6 +283,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
         let proof1 = OuterSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
         println!("last proof (outer): {}", OuterSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
     }
+    panic!("Wrong kind of last proof");
 
 }
 

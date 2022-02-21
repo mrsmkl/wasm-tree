@@ -904,6 +904,7 @@ fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> Ou
 
 pub mod merkleloop;
 pub mod aggloop;
+pub mod aggfinal;
 
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
@@ -1114,6 +1115,8 @@ fn get_transitions(c: &Collector) -> Vec<Transition> {
     circuits
 }
 
+use crate::aggfinal::InnerAggregateFinal;
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
@@ -1152,8 +1155,7 @@ fn main() {
 
         let trs = get_transitions(&c);
 
-        merkleloop::handle_loop(&params, trs); return;
-
+        let (loop_proof, loop_vk, start_st, end_st) = merkleloop::handle_loop(&params, trs);
 
         let mut keys = vec![];
         keys.push(setup_circuit(c.add[0].clone()));
@@ -1272,6 +1274,22 @@ fn main() {
             let hash1 = last.calc_hash();
             let proof1 = InnerSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
             println!("last proof: {}", InnerSNARK::verify(&setup.vk, &vec![hash1.clone()], &proof1).unwrap());
+            println!("root hash {}", hash1);
+
+            let fin = InnerAggregateFinal {
+                start_st: start_st.clone(),
+                end_st: end_st.clone(),
+                root: hash1.clone(),
+                proof1,
+                proof2: loop_proof,
+                vk: setup.vk.clone(),
+                vk_loop: loop_vk,
+            };
+            let (final_pk, final_vk) = OuterSNARK::setup(fin.clone(), &mut rng).unwrap();
+            println!("final setup");
+            let final_proof = OuterSNARK::prove(&final_pk, fin.clone(), &mut rng).unwrap();
+            println!("final proof: {}", OuterSNARK::verify(&final_vk, &vec![mnt6(&start_st),mnt6(&end_st),mnt6(&hash1)], &final_proof).unwrap());
+
         }
 
     }

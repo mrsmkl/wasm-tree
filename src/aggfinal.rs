@@ -54,16 +54,17 @@ use crate::InnerSNARKVK;
 use crate::InnerSNARKProof;
 use crate::OuterSNARKPK;
 use crate::InnerSNARKPK;
+use crate::mnt6;
 
 #[derive(Debug, Clone)]
 pub struct InnerAggregateFinal {
-    start_st : Fr,
-    end_st : Fr,
-    root : Fr,
-    proof1: InnerSNARKProof,
-    proof2: InnerSNARKProof,
-    vk: InnerSNARKVK,
-    vk_loop: InnerSNARKVK,
+    pub start_st : Fr,
+    pub end_st : Fr,
+    pub root : Fr,
+    pub proof1: InnerSNARKProof,
+    pub proof2: InnerSNARKProof,
+    pub vk: InnerSNARKVK,
+    pub vk_loop: InnerSNARKVK,
 }
 
 impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateFinal {
@@ -86,28 +87,27 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateFinal {
             <MNT4PairingEngine as PairingEngine>::Fr,
             <MNT4PairingEngine as PairingEngine>::Fq,
             InnerSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.start_st.clone(), self.mid_st.clone(), self.root.clone()]))
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.root.clone()]))
         .unwrap();
         let input2_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
             <MNT4PairingEngine as PairingEngine>::Fq,
             InnerSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.mid_st.clone(), self.end_st.clone(), self.root.clone()]))
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.start_st.clone(), self.end_st.clone(), self.root.clone()]))
         .unwrap();
 
         let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
         let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
-    
+
         let start_bool_vec = start_var.to_bits_le().unwrap();
         let end_bool_vec = end_var.to_bits_le().unwrap();
         let root_bool_vec = root_var.to_bits_le().unwrap();
 
-        input1_bool_vec[0].enforce_equal(&start_bool_vec)?;
-        input1_bool_vec[1].enforce_equal(&input2_bool_vec[0])?;
-        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
-
-        input2_bool_vec[1].enforce_equal(&end_bool_vec)?;
+        input2_bool_vec[0].enforce_equal(&start_bool_vec)?;
+        input2_bool_vec[0].enforce_equal(&end_bool_vec)?;
         input2_bool_vec[2].enforce_equal(&root_bool_vec)?;
+
+        input1_bool_vec[0].enforce_equal(&root_bool_vec)?;
 
         let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
@@ -127,11 +127,17 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateFinal {
             InnerSNARK,
         >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), self.vk.clone())
         .unwrap();
+        let vk_loop_gadget = <InnerSNARKGadget as SNARKGadget<
+            <MNT4PairingEngine as PairingEngine>::Fr,
+            <MNT4PairingEngine as PairingEngine>::Fq,
+            InnerSNARK,
+        >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), self.vk_loop.clone())
+        .unwrap();
         InnerSNARKGadget::verify(&vk_gadget, &input1_gadget, &proof1_gadget)
         .unwrap()
         .enforce_equal(&Boolean::constant(true))
         .unwrap();
-        InnerSNARKGadget::verify(&vk_gadget, &input2_gadget, &proof2_gadget)
+        InnerSNARKGadget::verify(&vk_loop_gadget, &input2_gadget, &proof2_gadget)
         .unwrap()
         .enforce_equal(&Boolean::constant(true))
         .unwrap();
