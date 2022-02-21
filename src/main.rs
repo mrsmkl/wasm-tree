@@ -1273,13 +1273,13 @@ fn main() {
             breakno: vec![],
             breakyes: vec![],
         };
-        for i in 0..100 {
+        for i in 0..64 {
             vm.step(&params, &mut c);
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
 
-        handle_recursive_groth(c.add.clone());
+        // handle_recursive_groth(c.add.clone());
 
         let mut keys = vec![];
         keys.push(setup_circuit(c.add[0].clone()));
@@ -1316,22 +1316,6 @@ fn main() {
         println!("proof: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![circuit.hash.clone()]), &proof).unwrap());
         println!("select key {}", vk.gamma_abc_g1.len());
 
-        // First step is proving all instructions and then making them uniform
-        /*
-        let mut circuits = vec![];
-
-        make_circuits(&mut circuits, &c.add, &keys, 0);
-        make_circuits(&mut circuits, &c.sub, &keys, 1);
-        make_circuits(&mut circuits, &c.gt, &keys, 2);
-        make_circuits(&mut circuits, &c.constant, &keys, 3);
-        make_circuits(&mut circuits, &c.get, &keys, 4);
-        make_circuits(&mut circuits, &c.set, &keys, 5);
-        make_circuits(&mut circuits, &c.loopi, &keys, 6);
-        make_circuits(&mut circuits, &c.endi, &keys, 7);
-        make_circuits(&mut circuits, &c.breakno, &keys, 8);
-        make_circuits(&mut circuits, &c.breakyes, &keys, 9);
-        */
-
         // setup recursive circuits
         let hash_circuit = HashCircuit {
             a: Fr::from(0),
@@ -1346,35 +1330,38 @@ fn main() {
             params: params.clone(),
         };
 
-        let (agg_circuit1, setup2) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
-        println!("first level {}", setup2.vk.gamma_abc_g1.len());
-        let (agg_circuit2, setup3) = inner_to_outer(&agg_circuit1, &setup2);
-        let (agg_circuit3, setup4) = outer_to_inner(&agg_circuit2, &setup3, &hash_pk, &hash_vk);
+        let mut setups1 = vec![];
+        let mut setups2 = vec![];
+        let mut agg_circuits1 = vec![];
+        let mut agg_circuits2 = vec![];
+        let (agg_circuit_in, setup_in) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
 
-        /* = aggregate_level2(circuit.clone(), circuit.clone(), &setup1);
-        let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
+        setups2.push(setup_in);
+        agg_circuits2.push(agg_circuit_in);
 
-        let setup2 = InnerSetup {
-            pk,
-            vk,
-            hash_pk: hash_pk.clone(),
-            hash_vk: hash_vk.clone(),
-            params: params.clone(),
-        };*/
+        for i in 0..4 {
+            let (agg_circuit_out, setup_out) = inner_to_outer(&agg_circuits2[i], &setups2[i]);
+            let (agg_circuit_in, setup_in) = outer_to_inner(&agg_circuit_out, &setup_out, &hash_pk, &hash_vk);
+            setups2.push(setup_in);
+            setups1.push(setup_out);
+            agg_circuits2.push(agg_circuit_in);
+            agg_circuits1.push(agg_circuit_out);
+        }
 
-        // test_circuit2(circuit);
-        /*
-        test_circuit(c.sub[0].clone());
-        test_circuit(c.gt[0].clone());
-        test_circuit(c.constant[0].clone());
-        test_circuit(c.get[0].clone());
-        test_circuit(c.set[0].clone());
-        test_circuit(c.loopi[0].clone());
-        test_circuit(c.endi[0].clone());
-        test_circuit(c.breakno[0].clone());
-        test_circuit(c.breakyes[0].clone());
-        handle_recursive_groth(c.add)
-        */
+        // First step is proving all instructions and then making them uniform
+        let mut circuits = vec![];
+
+        make_circuits(&mut circuits, &c.add, &keys, 0);
+        make_circuits(&mut circuits, &c.sub, &keys, 1);
+        make_circuits(&mut circuits, &c.gt, &keys, 2);
+        make_circuits(&mut circuits, &c.constant, &keys, 3);
+        make_circuits(&mut circuits, &c.get, &keys, 4);
+        make_circuits(&mut circuits, &c.set, &keys, 5);
+        make_circuits(&mut circuits, &c.loopi, &keys, 6);
+        make_circuits(&mut circuits, &c.endi, &keys, 7);
+        make_circuits(&mut circuits, &c.breakno, &keys, 8);
+        make_circuits(&mut circuits, &c.breakyes, &keys, 9);
+
     }
 
 }
