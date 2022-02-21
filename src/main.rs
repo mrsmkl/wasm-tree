@@ -1193,6 +1193,22 @@ fn inner_to_outer<C: InstructionCircuit>(circuit: &C, setup: &InnerSetup) ->
     (agg_circuit1, setup2)
 }
 
+fn aggregate_list2<C: InstructionCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<OuterAggregationCircuit> {
+    let mut level1 = vec![];
+    for i in 0..circuit.len()/2 {
+        level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+    }
+    level1
+}
+
+fn aggregate_list1<C: InstructionCircuit>(circuit: &[C], setup: &InnerSetup) -> Vec<InnerAggregationCircuit> {
+    let mut level1 = vec![];
+    for i in 0..circuit.len()/2 {
+        level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+    }
+    level1
+}
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
@@ -1223,11 +1239,16 @@ fn main() {
             breakno: vec![],
             breakyes: vec![],
         };
-        for i in 0..64 {
+        for i in 0..32 {
             vm.step(&params, &mut c);
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
+
+        /*
+        println!("lens break yes {} break no {} loopi {}");
+        return Ok(());
+        */
 
         // handle_recursive_groth(c.add.clone());
 
@@ -1241,12 +1262,18 @@ fn main() {
         keys.push(setup_circuit(c.loopi[0].clone()));
         if c.endi.len() > 0 {
             keys.push(setup_circuit(c.endi[0].clone()));
+        } else {
+            keys.push(keys[0].clone());
         }
         if c.breakno.len() > 0 {
             keys.push(setup_circuit(c.breakno[0].clone()));
+        } else {
+            keys.push(keys[0].clone());
         }
         if c.breakyes.len() > 0 {
             keys.push(setup_circuit(c.breakyes[0].clone()));
+        } else {
+            keys.push(keys[0].clone());
         }
         while keys.len() < 16 {
             keys.push(keys[0].clone());
@@ -1282,24 +1309,23 @@ fn main() {
             params: params.clone(),
         };
 
-        let mut setups1 : Vec<InnerSetup> = vec![];
+        let mut setups1 = vec![];
         let mut setups2 = vec![];
-        let mut agg_circuits1 : Vec<InnerAggregationCircuit> = vec![];
+        let mut agg_circuits1 = vec![];
         let mut agg_circuits2 = vec![];
         let (agg_circuit_in, setup_in) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
 
         setups2.push(setup_in.clone());
         agg_circuits2.push(agg_circuit_in);
 
-        /*
-        for i in 0..4 {
+        for i in 0..3 {
             let (agg_circuit_out, setup_out) = inner_to_outer(&agg_circuits2[i], &setups2[i]);
             let (agg_circuit_in, setup_in) = outer_to_inner(&agg_circuit_out, &setup_out, &hash_pk, &hash_vk);
             setups2.push(setup_in);
             setups1.push(setup_out);
             agg_circuits2.push(agg_circuit_in);
             agg_circuits1.push(agg_circuit_out);
-        }*/
+        }
 
         // First step is proving all instructions and then making them uniform
         let mut circuits = vec![];
@@ -1317,66 +1343,13 @@ fn main() {
 
         println!("Got circuits {}", circuits.len());
 
-        let mut level1 = vec![];
-        for i in 0..circuits.len()/2 {
-            let vk = setup1.vk.clone();
-            let pk = setup1.pk.clone();
-            let c1 = circuits[2*i].clone();
-            let c2 = circuits[2*i+1].clone();
-            let hash1 = c1.calc_hash();
-            let hash2 = c2.calc_hash();
-            let hash3 = hash_pair(&params, &hash1, &hash2);
+        let level1 = aggregate_list2(&circuits, &setup1);
 
-            let proof1 = OuterSNARK::prove(&pk, c1.clone(), &mut rng).unwrap();
-            println!("proof1: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
-            let proof2 = OuterSNARK::prove(&pk, c2.clone(), &mut rng).unwrap();
-            println!("proof2: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![hash2.clone()]), &proof2).unwrap());
-            level1.push(OuterAggregationCircuit {
-                a: hash1,
-                b: hash2,
-                c: hash3,
-                proof1: proof1,
-                proof2: proof2,
-                vk: vk.clone(),
-                params: params.clone(),
-            })
+        let mut prev_level = level1;
+        for i in 0..3 {
+            let mut level2 = aggregate_list1(&prev_level, &setups2[i]);
+            prev_level = aggregate_list2(&level2, &setups1[i]);
         }
-
-        let mut level2 = vec![];
-        for i in 0..level1.len()/2 {
-            let vk = setup_in.vk.clone();
-            let pk = setup_in.pk.clone();
-            let c1 = level1[2*i].clone();
-            let c2 = level1[2*i+1].clone();
-            let hash1 = c1.calc_hash();
-            let hash2 = c2.calc_hash();
-
-            let hash_circuit = HashCircuit {
-                a: hash1,
-                b: hash2,
-                params: params.clone(),
-            };
-        
-            let hash3 = hash_circuit.calc_hash();
-        
-            let proof1 = InnerSNARK::prove(&pk, c1.clone(), &mut rng).unwrap();
-            println!("proof1: {}", InnerSNARK::verify(&vk, &vec![hash1.clone()], &proof1).unwrap());
-            let proof2 = InnerSNARK::prove(&pk, c2.clone(), &mut rng).unwrap();
-            println!("proof2: {}", InnerSNARK::verify(&vk, &vec![hash2.clone()], &proof2).unwrap());
-            let proof_hash = InnerSNARK::prove(&hash_pk, hash_circuit.clone(), &mut rng).unwrap();
-            println!("proof hash: {}", InnerSNARK::verify(&hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap());
-            level2.push(InnerAggregationCircuit {
-                a: hash1,
-                b: hash2,
-                c: hash3,
-                proof1: proof1,
-                proof2: proof2,
-                proof_hash: proof_hash,
-                vk: vk.clone(),
-                hash_vk: hash_vk.clone(),
-            })
-        }
-
     }
 
 }
