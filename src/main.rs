@@ -504,7 +504,7 @@ impl VM {
     } 
 }
 
-fn hash(params: &PoseidonParameters<Fr>, a: &Fr, b: &Fr) -> Fr {
+fn hash_pair(params: &PoseidonParameters<Fr>, a: &Fr, b: &Fr) -> Fr {
     let mut inputs = vec![];
     inputs.push(a.clone());
     inputs.push(b.clone());
@@ -748,12 +748,6 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
 
         println!("Input vecs {}", input1_bool_vec[0].len());
 
-        /*
-        input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0])?;
-        input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1])?;
-        input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2])?;
-        */
-
         // inputs for hashing
         let a_var = FpVar::Var(
             AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(self.a.clone())).unwrap(),
@@ -820,6 +814,7 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
     }
 }
 
+#[derive(Debug, Clone)]
 struct InnerSetup {
     pub pk: InnerSNARKPK,
     pub hash_pk: InnerSNARKPK,
@@ -864,54 +859,7 @@ fn aggregate_level1<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> Inn
     }
 }
 
-fn aggregate_level3<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> InnerAggregationCircuit {
-    let mut rng = test_rng();
-    let hash1 = a.calc_hash();
-    let hash2 = b.calc_hash();
-
-    let hash_circuit = HashCircuit {
-        a: hash1,
-        b: hash2,
-        params: setup.params.clone(),
-    };
-
-    let proof1 = InnerSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
-    let proof2 = InnerSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
-    let proof_hash = InnerSNARK::prove(&setup.hash_pk, hash_circuit.clone(), &mut rng).unwrap();
-
-    let hash3 = hash_circuit.calc_hash();
-
-    println!(
-        "proof hash: {}",
-        InnerSNARK::verify(&setup.hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap()
-    );
-    let outer_input1 = <OuterSNARKGadget as SNARKGadget<
-        <MNT6PairingEngine as PairingEngine>::Fr,
-        <MNT6PairingEngine as PairingEngine>::Fq,
-        OuterSNARK,
-    >>::InputVar::repack_input(&vec![mnt6(&hash1)]);
-    let outer_input2 = <OuterSNARKGadget as SNARKGadget<
-        <MNT6PairingEngine as PairingEngine>::Fr,
-        <MNT6PairingEngine as PairingEngine>::Fq,
-        OuterSNARK,
-    >>::InputVar::repack_input(&vec![mnt6(&hash2)]);
-    println!("outer input1: {} {} {} {}", outer_input1[0], outer_input1[1], hash1, mnt6(&hash1));
-    println!("outer input2: {} {} {} {}", outer_input2[0], outer_input2[1], hash2, mnt6(&hash2));
-    println!("proof1: {}", InnerSNARK::verify(&setup.vk, &outer_input1, &proof1).unwrap());
-    println!("proof2: {}", InnerSNARK::verify(&setup.vk, &outer_input2, &proof2).unwrap());
-
-    InnerAggregationCircuit {
-        a: hash1,
-        b: hash2,
-        c: hash3,
-        proof1: proof1,
-        proof2: proof2,
-        proof_hash: proof_hash,
-        vk: setup.vk.clone(),
-        hash_vk: setup.hash_vk.clone(),
-    }
-}
-
+#[derive(Debug, Clone)]
 struct OuterSetup {
     pub pk: OuterSNARKPK,
     pub vk: OuterSNARKVK,
@@ -932,7 +880,7 @@ fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> Ou
     OuterAggregationCircuit {
         a: hash1,
         b: hash2,
-        c: hash(&setup.params, &hash1, &hash2),
+        c: hash_pair(&setup.params, &hash1, &hash2),
         proof1: proof1,
         proof2: proof2,
         vk: setup.vk.clone(),
@@ -940,6 +888,7 @@ fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> Ou
     }
 }
 
+/*
 fn handle_recursive_groth(a: Vec<AddCircuit>) {
     let mut rng = test_rng();
 
@@ -1002,6 +951,7 @@ fn handle_recursive_groth(a: Vec<AddCircuit>) {
     println!("outer proof: {}", InnerSNARK::verify(&outer_vk, &outer_input, &outer_proof).unwrap());
 
 }
+*/
 
 fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: &[Fr], root: FpVar<Fr>, selectors: &[bool]) -> FpVar<Fr> {
 
@@ -1289,15 +1239,18 @@ fn main() {
         keys.push(setup_circuit(c.get[0].clone()));
         keys.push(setup_circuit(c.set[0].clone()));
         keys.push(setup_circuit(c.loopi[0].clone()));
-        keys.push(setup_circuit(c.endi[0].clone()));
-        keys.push(setup_circuit(c.breakno[0].clone()));
-        keys.push(setup_circuit(c.breakyes[0].clone()));
-        keys.push(keys[0].clone());
-        keys.push(keys[0].clone());
-        keys.push(keys[0].clone());
-        keys.push(keys[0].clone());
-        keys.push(keys[0].clone());
-        keys.push(keys[0].clone());
+        if c.endi.len() > 0 {
+            keys.push(setup_circuit(c.endi[0].clone()));
+        }
+        if c.breakno.len() > 0 {
+            keys.push(setup_circuit(c.breakno[0].clone()));
+        }
+        if c.breakyes.len() > 0 {
+            keys.push(setup_circuit(c.breakyes[0].clone()));
+        }
+        while keys.len() < 16 {
+            keys.push(keys[0].clone());
+        }
 
         let mut rng = test_rng();
 
@@ -1314,7 +1267,6 @@ fn main() {
         println!("Testing prove");
         let proof = OuterSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
         println!("proof: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![circuit.hash.clone()]), &proof).unwrap());
-        println!("select key {}", vk.gamma_abc_g1.len());
 
         // setup recursive circuits
         let hash_circuit = HashCircuit {
@@ -1330,15 +1282,16 @@ fn main() {
             params: params.clone(),
         };
 
-        let mut setups1 = vec![];
+        let mut setups1 : Vec<InnerSetup> = vec![];
         let mut setups2 = vec![];
-        let mut agg_circuits1 = vec![];
+        let mut agg_circuits1 : Vec<InnerAggregationCircuit> = vec![];
         let mut agg_circuits2 = vec![];
         let (agg_circuit_in, setup_in) = outer_to_inner(&circuit, &setup1, &hash_pk, &hash_vk);
 
-        setups2.push(setup_in);
+        setups2.push(setup_in.clone());
         agg_circuits2.push(agg_circuit_in);
 
+        /*
         for i in 0..4 {
             let (agg_circuit_out, setup_out) = inner_to_outer(&agg_circuits2[i], &setups2[i]);
             let (agg_circuit_in, setup_in) = outer_to_inner(&agg_circuit_out, &setup_out, &hash_pk, &hash_vk);
@@ -1346,7 +1299,7 @@ fn main() {
             setups1.push(setup_out);
             agg_circuits2.push(agg_circuit_in);
             agg_circuits1.push(agg_circuit_out);
-        }
+        }*/
 
         // First step is proving all instructions and then making them uniform
         let mut circuits = vec![];
@@ -1361,6 +1314,68 @@ fn main() {
         make_circuits(&mut circuits, &c.endi, &keys, 7);
         make_circuits(&mut circuits, &c.breakno, &keys, 8);
         make_circuits(&mut circuits, &c.breakyes, &keys, 9);
+
+        println!("Got circuits {}", circuits.len());
+
+        let mut level1 = vec![];
+        for i in 0..circuits.len()/2 {
+            let vk = setup1.vk.clone();
+            let pk = setup1.pk.clone();
+            let c1 = circuits[2*i].clone();
+            let c2 = circuits[2*i+1].clone();
+            let hash1 = c1.calc_hash();
+            let hash2 = c2.calc_hash();
+            let hash3 = hash_pair(&params, &hash1, &hash2);
+
+            let proof1 = OuterSNARK::prove(&pk, c1.clone(), &mut rng).unwrap();
+            println!("proof1: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
+            let proof2 = OuterSNARK::prove(&pk, c2.clone(), &mut rng).unwrap();
+            println!("proof2: {}", OuterSNARK::verify(&vk, &convert_inputs(&vec![hash2.clone()]), &proof2).unwrap());
+            level1.push(OuterAggregationCircuit {
+                a: hash1,
+                b: hash2,
+                c: hash3,
+                proof1: proof1,
+                proof2: proof2,
+                vk: vk.clone(),
+                params: params.clone(),
+            })
+        }
+
+        let mut level2 = vec![];
+        for i in 0..level1.len()/2 {
+            let vk = setup_in.vk.clone();
+            let pk = setup_in.pk.clone();
+            let c1 = level1[2*i].clone();
+            let c2 = level1[2*i+1].clone();
+            let hash1 = c1.calc_hash();
+            let hash2 = c2.calc_hash();
+
+            let hash_circuit = HashCircuit {
+                a: hash1,
+                b: hash2,
+                params: params.clone(),
+            };
+        
+            let hash3 = hash_circuit.calc_hash();
+        
+            let proof1 = InnerSNARK::prove(&pk, c1.clone(), &mut rng).unwrap();
+            println!("proof1: {}", InnerSNARK::verify(&vk, &vec![hash1.clone()], &proof1).unwrap());
+            let proof2 = InnerSNARK::prove(&pk, c2.clone(), &mut rng).unwrap();
+            println!("proof2: {}", InnerSNARK::verify(&vk, &vec![hash2.clone()], &proof2).unwrap());
+            let proof_hash = InnerSNARK::prove(&hash_pk, hash_circuit.clone(), &mut rng).unwrap();
+            println!("proof hash: {}", InnerSNARK::verify(&hash_vk, &vec![hash1.clone(), hash2.clone(), hash3.clone()], &proof_hash).unwrap());
+            level2.push(InnerAggregationCircuit {
+                a: hash1,
+                b: hash2,
+                c: hash3,
+                proof1: proof1,
+                proof2: proof2,
+                proof_hash: proof_hash,
+                vk: vk.clone(),
+                hash_vk: hash_vk.clone(),
+            })
+        }
 
     }
 
