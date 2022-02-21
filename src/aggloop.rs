@@ -125,9 +125,8 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
         input1_bool_vec[1].enforce_equal(&input2_bool_vec[0])?;
         input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
 
-        input1_bool_vec[0].enforce_equal(&input2_bool_vec[0])?;
-        input1_bool_vec[1].enforce_equal(&end_bool_vec)?;
-        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
+        input2_bool_vec[1].enforce_equal(&end_bool_vec)?;
+        input2_bool_vec[2].enforce_equal(&root_bool_vec)?;
 
         let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
@@ -147,11 +146,7 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
             InnerSNARK,
         >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), self.vk.clone())
         .unwrap();
-        <InnerSNARKGadget as SNARKGadget<
-            <MNT4PairingEngine as PairingEngine>::Fr,
-            <MNT4PairingEngine as PairingEngine>::Fq,
-            InnerSNARK,
-        >>::verify(&vk_gadget, &input1_gadget, &proof1_gadget)
+        InnerSNARKGadget::verify(&vk_gadget, &input1_gadget, &proof1_gadget)
         .unwrap()
         .enforce_equal(&Boolean::constant(true))
         .unwrap();
@@ -241,9 +236,8 @@ impl ConstraintSynthesizer<Fr> for OuterAggregateLoop {
         input1_bool_vec[1].enforce_equal(&input2_bool_vec[0])?;
         input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
 
-        input1_bool_vec[0].enforce_equal(&input2_bool_vec[0])?;
-        input1_bool_vec[1].enforce_equal(&end_bool_vec)?;
-        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
+        input2_bool_vec[1].enforce_equal(&end_bool_vec)?;
+        input2_bool_vec[2].enforce_equal(&root_bool_vec)?;
     
         let proof1_gadget = <OuterSNARKGadget as SNARKGadget<
             <MNT6PairingEngine as PairingEngine>::Fr,
@@ -299,7 +293,10 @@ fn aggregate_level1<C:LoopCircuit>(a: C, b: C, setup: &InnerSetup) -> InnerAggre
     println!("proof2: {}", InnerSNARK::verify(&setup.vk, &b.get_inputs(), &proof2).unwrap());
 
     let (start_st,mid_st,root) = a.get();
-    let (_,end_st,root) = b.get();
+    let (mid2,end_st,root2) = b.get();
+
+    println!("1 start {} end {} root {}",start_st,mid_st,root);
+    println!("2 start {} end {} root {}",mid2,end_st,root2);
 
     InnerAggregateLoop {
         start_st,
@@ -328,7 +325,10 @@ fn aggregate_level2<C:LoopCircuit2>(a: C, b: C, setup: &OuterSetup) -> OuterAggr
     println!("proof2: {}", OuterSNARK::verify(&setup.vk, &b.get_inputs(), &proof2).unwrap());
 
     let (start_st,mid_st,root) = a.get();
-    let (_,end_st,root) = b.get();
+    let (mid2,end_st,root2) = b.get();
+
+    println!("1 start {} end {} root {}",start_st,mid_st,root);
+    println!("2 start {} end {} root {}",mid2,end_st,root2);
 
     OuterAggregateLoop {
         start_st,
@@ -370,7 +370,7 @@ pub fn inner_to_outer<C: LoopCircuit>(circuit: &C, setup: &InnerSetup) -> (Inner
 pub fn aggregate_list2<C: LoopCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<OuterAggregateLoop> {
     let mut level1 = vec![];
     for i in 0..circuit.len()/2 {
-        level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+        level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i+1].clone(), setup));
     }
     level1
 }
@@ -378,7 +378,7 @@ pub fn aggregate_list2<C: LoopCircuit2>(circuit: &[C], setup: &OuterSetup) -> Ve
 pub fn aggregate_list1<C: LoopCircuit>(circuit: &[C], setup: &InnerSetup) -> Vec<InnerAggregateLoop> {
     let mut level1 = vec![];
     for i in 0..circuit.len()/2 {
-        level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+        level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i+1].clone(), setup));
     }
     level1
 }
