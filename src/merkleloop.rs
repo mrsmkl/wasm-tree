@@ -41,7 +41,7 @@ fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>,
         inputs.push(bool_var.select(&last, &b_var).unwrap());
         inputs.push(bool_var.select(&b_var, &last).unwrap());
         let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs[..]).unwrap();
-        println!("Got hash {}, last {}", hash_gadget.value().unwrap(), last.value().unwrap());
+        // println!("Got hash {}, last {}", hash_gadget.value().unwrap(), last.value().unwrap());
         last = hash_gadget
     }
 
@@ -58,13 +58,13 @@ fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, pa
     let len = path.len();
 
     let first = FpVar::Var(
-        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(leafs[0].clone())).unwrap(),
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[0].clone())).unwrap(),
     );
     let end_var = FpVar::Var(
-        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(leafs[len].clone())).unwrap(),
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[len].clone())).unwrap(),
     );
     let root_var = FpVar::Var(
-        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(root.clone())).unwrap(),
+        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(root.clone())).unwrap(),
     );
 
     let mut last = first.clone();
@@ -85,8 +85,30 @@ fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, pa
     }
     last.enforce_equal(&end_var).unwrap();
 
-    println!("Testing {}", cs.is_satisfied().unwrap());
+    // println!("Testing {}", cs.is_satisfied().unwrap());
 
+}
+
+#[derive(Debug, Clone)]
+struct MerkleLoop {
+    params : PoseidonParameters<Fr>,
+    paths: Vec<Vec<Fr>>,
+    leafs: Vec<Fr>,
+    root: Fr, 
+    selectors: Vec<Vec<bool>>,
+}
+
+impl MerkleLoop {
+    fn get_inputs(&self) -> Vec<Fr> {
+        vec![self.leafs[0].clone(), self.leafs[self.leafs.len()-1].clone(), self.root.clone()]
+    }
+}
+
+impl ConstraintSynthesizer<Fr> for MerkleLoop {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
+        merkle_loop(cs, &self.params, &self.paths, &self.leafs, self.root, self.selectors);
+        Ok(())
+    }
 }
 
 fn compute_level(params : &PoseidonParameters<Fr>, l: &[Fr]) -> Vec<Fr> {
@@ -113,7 +135,7 @@ fn adj(i: usize) -> usize {
 }
 
 fn compute_path(levels: &Vec<Vec<Fr>>, idx: usize) -> (Vec<Fr>, Vec<bool>) {
-    println!("Computing path {}", idx);
+    // println!("Computing path {}", idx);
     let mut idx = idx;
     let mut path = vec![];
     path.push(levels[0][idx].clone());
@@ -121,11 +143,16 @@ fn compute_path(levels: &Vec<Vec<Fr>>, idx: usize) -> (Vec<Fr>, Vec<bool>) {
     for i in 0..levels.len()-1 {
         path.push(levels[i][adj(idx)]);
         selector.push(idx % 2 == 0);
-        println!("making path {} {} elem {}", levels[i][adj(idx)], idx%2 == 0, levels[i][idx]);
+        // println!("making path {} {} elem {}", levels[i][adj(idx)], idx%2 == 0, levels[i][idx]);
         idx = idx/2;
     }
     (path, selector)
-} 
+}
+
+use ark_std::test_rng;
+use crate::InnerSNARK;
+use ark_crypto_primitives::CircuitSpecificSetupSNARK;
+use ark_crypto_primitives::SNARK;
 
 pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition>) {
     let mut level1 = vec![];
@@ -149,7 +176,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     for (i,tr) in transitions.iter().enumerate() {
         let idx = tr.before.step_counter;
         leafs[idx] = tr.before.hash(params);
-        println!("Got tr {} {}", idx, leafs[idx]);
+        // println!("Got tr {} {}", idx, leafs[idx]);
         // Last state
         if idx == transitions.len() - 1 {
             leafs.push(tr.after.hash(params))
@@ -159,13 +186,30 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
         selectors[idx] = sel;
     }
 
-    // 
-
-    let cs_sys = ConstraintSystem::<Fr>::new();
-    let cs = ConstraintSystemRef::new(cs_sys);
-
     let root = levels.last().unwrap()[0].clone();
 
+    // 
+
+    /*
+     let cs_sys = ConstraintSystem::<Fr>::new();
+     let cs = ConstraintSystemRef::new(cs_sys);
     merkle_loop(cs, params, &paths, &leafs, root, selectors);
+    */
+
+    let circuit = MerkleLoop {
+        params: params.clone(),
+        paths,
+        leafs,
+        root,
+        selectors,
+    };
+
+    let mut rng = test_rng();
+    println!("Setting up circuit");
+    let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
+    println!("Testing prove");
+    let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    println!("proof: {}", InnerSNARK::verify(&vk, &circuit.get_inputs(), &proof).unwrap());
+
 }
 
