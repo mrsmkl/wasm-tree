@@ -629,7 +629,7 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregationCircuit {
         let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
         let input_hash_bool_vec = input_hash_gadget.clone().into_iter().collect::<Vec<_>>();
 
-        println!("Input vecs {} {} {}", input1_bool_vec[0].len(), input2_bool_vec[0].len(), input3_bool_vec[0].len());
+        // println!("Input vecs {} {} {}", input1_bool_vec[0].len(), input2_bool_vec[0].len(), input3_bool_vec[0].len());
 
         input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0])?;
         input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1])?;
@@ -760,7 +760,7 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
 
         let input1_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
 
-        println!("Input vecs {}", input1_bool_vec[0].len());
+        // println!("Input vecs {}", input1_bool_vec[0].len());
 
         // inputs for hashing
         let a_var = FpVar::Var(
@@ -1084,7 +1084,7 @@ fn inner_to_outer<C: InstructionCircuit>(circuit: &C, setup: &InnerSetup) ->
 fn aggregate_list2<C: InstructionCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<OuterAggregationCircuit> {
     let mut level1 = vec![];
     for i in 0..circuit.len()/2 {
-        level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+        level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i+1].clone(), setup));
     }
     level1
 }
@@ -1092,7 +1092,7 @@ fn aggregate_list2<C: InstructionCircuit2>(circuit: &[C], setup: &OuterSetup) ->
 fn aggregate_list1<C: InstructionCircuit>(circuit: &[C], setup: &InnerSetup) -> Vec<InnerAggregationCircuit> {
     let mut level1 = vec![];
     for i in 0..circuit.len()/2 {
-        level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i].clone(), setup));
+        level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i+1].clone(), setup));
     }
     level1
 }
@@ -1152,15 +1152,8 @@ fn main() {
 
         let trs = get_transitions(&c);
 
-        merkleloop::handle_loop(&params, trs);
-        return;
+        merkleloop::handle_loop(&params, trs); return;
 
-        /*
-        println!("lens break yes {} break no {} loopi {}");
-        return Ok(());
-        */
-
-        // handle_recursive_groth(c.add.clone());
 
         let mut keys = vec![];
         keys.push(setup_circuit(c.add[0].clone()));
@@ -1266,7 +1259,7 @@ fn main() {
                 let setup = setups1[i].clone();
                 let hash1 = last.calc_hash();
                 let proof1 = OuterSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
-                println!("last proof: {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
+                println!("last proof (outer): {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
                 return
             }
             prev_level = aggregate_list2(&level2, &setups1[i]);

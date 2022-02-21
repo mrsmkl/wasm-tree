@@ -245,7 +245,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     setups1.push(setup_out.clone());
     agg_circuits1.push(agg_circuit_out);
 
-    for i in 0..1 {
+    for i in 0..2 {
         let (agg_circuit_in, setup_in) = outer_to_inner(&agg_circuits1[i], &setups1[i]);
         let (agg_circuit_out, setup_out) = inner_to_outer(&agg_circuit_in, &setup_in);
         setups2.push(setup_in);
@@ -261,18 +261,17 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     crate::test_circuit2(level1[0].clone());
 
     let mut prev_level = level1;
-    for i in 0..1 {
+    for i in 0..2 {
         println!("Level {} first len {}", i, prev_level.len());
         let mut level2 = aggregate_list2(&prev_level, &setups1[i]);
         println!("Level {} second len {}", i, level2.len());
-        /*
         if level2.len() == 1 {
             let last = level2[0].clone();
             let setup = setups2[i].clone();
             let proof1 = InnerSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
             println!("last proof: {}", InnerSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
             return
-        }*/
+        }
         prev_level = aggregate_list1(&level2, &setups2[i]);
     }
 
@@ -280,7 +279,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
         let last = prev_level[0].clone();
         let setup = setups1[1].clone();
         let proof1 = OuterSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
-        println!("last proof: {}", OuterSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
+        println!("last proof (outer): {}", OuterSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
     }
 
 }
