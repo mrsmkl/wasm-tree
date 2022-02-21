@@ -888,71 +888,6 @@ fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> Ou
     }
 }
 
-/*
-fn handle_recursive_groth(a: Vec<AddCircuit>) {
-    let mut rng = test_rng();
-
-    let hash1 = a[0].calc_hash();
-    let hash2 = a[1].calc_hash();
-    let params = &a[0].params;
-
-    let hash_circuit = HashCircuit {
-        a: hash1,
-        b: hash2,
-        params: a[0].params.clone(),
-    };
-
-    let (pk, vk) = InnerSNARK::setup(a[0].clone(), &mut rng).unwrap();
-    let (hash_pk, hash_vk) = InnerSNARK::setup(hash_circuit.clone(), &mut rng).unwrap();
-
-    let setup = InnerSetup {
-        pk,
-        hash_pk,
-        vk,
-        hash_vk, 
-        params: params.clone(),
-    };
-
-    let agg_circuit1 = aggregate_level1(a[0].clone(), a[1].clone(), &setup);
-    let agg_circuit2 = aggregate_level1(a[2].clone(), a[3].clone(), &setup);
-    let hash3 = agg_circuit1.c;
-    let hash4 = agg_circuit2.c;
-
-    let (inner_pk, inner_vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
-
-    let inner_proof1 = OuterSNARK::prove(&inner_pk, agg_circuit1.clone(), &mut rng).unwrap();
-    println!("inner proof 1: {}", OuterSNARK::verify(&inner_vk, &convert_inputs(&vec![hash3.clone()]), &inner_proof1).unwrap());
-
-    let inner_proof2 = OuterSNARK::prove(&inner_pk, agg_circuit2.clone(), &mut rng).unwrap();
-    println!("inner proof 2: {}", OuterSNARK::verify(&inner_vk, &convert_inputs(&vec![hash4.clone()]), &inner_proof2).unwrap());
-
-    let hash5 = hash(params, &hash3, &hash4);
-
-    let agg_circuit_outer = OuterAggregationCircuit {
-        a: hash3,
-        b: hash4,
-        c: hash5,
-        proof1: inner_proof1,
-        proof2: inner_proof2,
-        vk: inner_vk.clone(),
-        params: params.clone(),
-    };
-
-    let (outer_pk, outer_vk) = InnerSNARK::setup(agg_circuit_outer.clone(), &mut rng).unwrap();
-    let outer_proof = InnerSNARK::prove(&outer_pk, agg_circuit_outer.clone(), &mut rng).unwrap();
-    /*
-    let outer_input = <OuterSNARKGadget as SNARKGadget<
-        <MNT6PairingEngine as PairingEngine>::Fr,
-        <MNT6PairingEngine as PairingEngine>::Fq,
-        OuterSNARK,
-    >>::InputVar::repack_input(&vec![mnt6(&hash5)]);
-    */
-    let outer_input = vec![hash5];
-    println!("outer proof: {}", InnerSNARK::verify(&outer_vk, &outer_input, &outer_proof).unwrap());
-
-}
-*/
-
 fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: &[Fr], root: FpVar<Fr>, selectors: &[bool]) -> FpVar<Fr> {
 
     let first = FpVar::Var(
@@ -1350,6 +1285,16 @@ fn main() {
             let mut level2 = aggregate_list1(&prev_level, &setups2[i]);
             prev_level = aggregate_list2(&level2, &setups1[i]);
         }
+
+        // prove last
+        {
+            let last = prev_level[0].clone();
+            let setup = setups2[3].clone();
+            let hash1 = last.calc_hash();
+            let proof1 = InnerSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
+            println!("last proof: {}", InnerSNARK::verify(&setup.vk, &vec![hash1.clone()], &proof1).unwrap());
+        }
+
     }
 
 }
