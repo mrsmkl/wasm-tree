@@ -334,6 +334,7 @@ use crate::endi::EndCircuit;
 use crate::breakno::BreakNoCircuit;
 use crate::breakyes::BreakYesCircuit;
 
+#[derive(Debug, Clone)]
 pub struct Collector {
     add: Vec<AddCircuit>,
     sub: Vec<SubCircuit>,
@@ -901,80 +902,7 @@ fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> Ou
     }
 }
 
-fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: &[Fr], root: FpVar<Fr>, selectors: &[bool]) -> FpVar<Fr> {
-
-    let first = FpVar::Var(
-        AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(path[0].clone())).unwrap(),
-    );
-
-    let mut last = first.clone();
-
-    // println!("Working: {}", cs.is_satisfied().unwrap());
-    for (i, next_hash) in path[1..].iter().enumerate() {
-        let b_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(next_hash.clone())).unwrap(),
-        );
-        let bool_var = Boolean::from(
-            AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(selectors[i+1].clone())).unwrap(),
-        );
-        let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
-        let mut inputs = Vec::new();
-        inputs.push(bool_var.select(&last, &b_var).unwrap());
-        inputs.push(bool_var.select(&b_var, &last).unwrap());
-        let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs[..]).unwrap();
-        last = hash_gadget
-    }
-
-    last.enforce_equal(&root).unwrap();
-
-    println!("circuit has {} constraints", cs.num_constraints());
-
-    first
-}
-
-fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: Vec<Vec<Fr>>, leafs: Vec<Fr>, root: Fr, selectors: Vec<Vec<bool>>) {
-
-    let first = FpVar::Var(
-        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[0].clone())).unwrap(),
-    );
-    let end_var = FpVar::Var(
-        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[leafs.len()-1].clone())).unwrap(),
-    );
-    let root_var = FpVar::Var(
-        AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(root.clone())).unwrap(),
-    );
-
-    let mut last = first.clone();
-    let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
-
-    for (i,p) in path.iter().enumerate() {
-        let leaf_var = merkle_circuit(cs.clone(), params, p, root_var.clone(), &selectors[i]);
-        // check leafs
-        let next = FpVar::Var(
-            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[i+1].clone())).unwrap(),
-        );
-        let mut inputs = Vec::new();
-        inputs.push(last.clone());
-        inputs.push(next.clone());
-        let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs[..]).unwrap();
-        hash_gadget.enforce_equal(&leaf_var).unwrap();
-        last = next
-    }
-    last.enforce_equal(&end_var).unwrap();
-
-}
-
-/*
-fn main2() {
-    let params = generate_hash();
-    let selectors = vec![false, false, false, false];
-    let root = Fr::one();
-    let path = vec![root, root, root, root];
-    let cs_sys = ConstraintSystem::<Fr>::new();
-    let cs = ConstraintSystemRef::new(cs_sys);
-    // merkle_circuit(cs, &params, &path, root.clone(), &selectors);
-}
-*/
+pub mod merkleloop;
 
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
@@ -1111,6 +1039,13 @@ fn make_circuits<C: InstructionCircuit>(circuits: &mut Vec<SelectionCircuit>, ls
     }
 }
 
+fn get_transition<C: InstructionCircuit>(circuits: &mut Vec<Transition>, lst: &[C]) {
+    let mut rng = test_rng();
+    for i in lst {
+        circuits.push(i.transition());
+    }
+}
+
 fn outer_to_inner<C: InstructionCircuit2>(circuit: &C, setup: &OuterSetup, hash_pk: &InnerSNARKPK, hash_vk: &InnerSNARKVK) ->
     (OuterAggregationCircuit, InnerSetup) {
     let mut rng = test_rng();
@@ -1159,6 +1094,23 @@ fn aggregate_list1<C: InstructionCircuit>(circuit: &[C], setup: &InnerSetup) -> 
     level1
 }
 
+fn get_transitions(c: &Collector) -> Vec<Transition> {
+    let mut circuits = vec![];
+
+    get_transition(&mut circuits, &c.add);
+    get_transition(&mut circuits, &c.sub);
+    get_transition(&mut circuits, &c.gt);
+    get_transition(&mut circuits, &c.constant);
+    get_transition(&mut circuits, &c.get);
+    get_transition(&mut circuits, &c.set);
+    get_transition(&mut circuits, &c.loopi);
+    get_transition(&mut circuits, &c.endi);
+    get_transition(&mut circuits, &c.breakno);
+    get_transition(&mut circuits, &c.breakyes);
+
+    circuits
+}
+
 fn main() {
 
     let buffer = get_file("test.wasm".into());
@@ -1194,6 +1146,8 @@ fn main() {
             println!("{}: vm hash {}", i, vm.hash(&params));
             // println!("vm state {:?}", vm);
         }
+
+        let trs = get_transitions(&c);
 
         /*
         println!("lens break yes {} break no {} loopi {}");
