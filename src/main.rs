@@ -1297,8 +1297,18 @@ fn main() {
         let level1 = aggregate_list2(&circuits, &setup1);
 
         let mut prev_level = level1;
-        for i in 0..3 {
+        for i in 0..2 {
+            println!("Level {} first len {}", i, prev_level.len());
             let mut level2 = aggregate_list1(&prev_level, &setups2[i]);
+            println!("Level {} second len {}", i, level2.len());
+            if level2.len() == 1 {
+                let last = level2[0].clone();
+                let setup = setups1[i].clone();
+                let hash1 = last.calc_hash();
+                let proof1 = OuterSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
+                println!("last proof: {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
+                return
+            }
             prev_level = aggregate_list2(&level2, &setups1[i]);
         }
 
