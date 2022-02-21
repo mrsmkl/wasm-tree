@@ -161,6 +161,8 @@ use crate::aggloop::{OuterSetup,InnerSetup};
 use crate::aggloop::inner_to_outer;
 use crate::aggloop::outer_to_inner;
 use crate::aggloop::{aggregate_list1, aggregate_list2};
+use crate::aggloop::LoopCircuit2;
+use crate::OuterSNARK;
 
 pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition>) {
     let mut level1 = vec![];
@@ -205,7 +207,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     */
 
     let mut circuits = vec![];
-    let num = 4;
+    let num = 16;
     let len = transitions.len();
     let slice = len / num;
 
@@ -235,7 +237,6 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
 
     let (agg_circuit_out, setup_out) = inner_to_outer(&circuit, &setup1);
 
-    /*
     let mut setups1 = vec![];
     let mut setups2 = vec![];
     let mut agg_circuits1 = vec![];
@@ -244,7 +245,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     setups1.push(setup_out.clone());
     agg_circuits1.push(agg_circuit_out);
 
-    for i in 0..3 {
+    for i in 0..1 {
         let (agg_circuit_in, setup_in) = outer_to_inner(&agg_circuits1[i], &setups1[i]);
         let (agg_circuit_out, setup_out) = inner_to_outer(&agg_circuit_in, &setup_in);
         setups2.push(setup_in);
@@ -252,12 +253,35 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
         agg_circuits2.push(agg_circuit_in);
         agg_circuits1.push(agg_circuit_out);
     }
-    */
 
     println!("Starting aggregation");
 
     let level1 = aggregate_list1(&circuits, &setup1);
 
     crate::test_circuit2(level1[0].clone());
+
+    let mut prev_level = level1;
+    for i in 0..1 {
+        println!("Level {} first len {}", i, prev_level.len());
+        let mut level2 = aggregate_list2(&prev_level, &setups1[i]);
+        println!("Level {} second len {}", i, level2.len());
+        /*
+        if level2.len() == 1 {
+            let last = level2[0].clone();
+            let setup = setups2[i].clone();
+            let proof1 = InnerSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
+            println!("last proof: {}", InnerSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
+            return
+        }*/
+        prev_level = aggregate_list1(&level2, &setups2[i]);
+    }
+
+    {
+        let last = prev_level[0].clone();
+        let setup = setups1[1].clone();
+        let proof1 = OuterSNARK::prove(&setup.pk, last.clone(), &mut rng).unwrap();
+        println!("last proof: {}", OuterSNARK::verify(&setup.vk, &last.get_inputs(), &proof1).unwrap());
+    }
+
 }
 
