@@ -13,8 +13,9 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_r1cs_std::boolean::AllocatedBool;
 use ark_r1cs_std::boolean::Boolean;
+use ark_relations::r1cs::ConstraintSystem;
 
-use crate::{VM,Transition,hash_list,hash_code};
+use crate::{VM,Transition,hash_list,hash_code,hash_pair};
 use crate::InstructionCircuit;
 
 fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: &[Fr], root: FpVar<Fr>, selectors: &[bool]) -> FpVar<Fr> {
@@ -48,7 +49,7 @@ fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>,
     first
 }
 
-fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: Vec<Vec<Fr>>, leafs: Vec<Fr>, root: Fr, selectors: Vec<Vec<bool>>) {
+fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, path: Vec<Vec<Fr>>, leafs: &Vec<Fr>, root: Fr, selectors: Vec<Vec<bool>>) {
 
     let first = FpVar::Var(
         AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(leafs[0].clone())).unwrap(),
@@ -78,4 +79,82 @@ fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, pa
     }
     last.enforce_equal(&end_var).unwrap();
 
+    println!("Testing {}", cs.is_satisfied().unwrap());
+
 }
+
+fn compute_level(params : &PoseidonParameters<Fr>, l: &[Fr]) -> Vec<Fr> {
+    let mut res = vec![];
+    for i in 0..l.len()/2 {
+        res.push(hash_pair(params, &l[2*i], &l[2*i+1]))
+    };
+    res
+}
+
+fn compute_levels(params : &PoseidonParameters<Fr>, l: &Vec<Fr>) -> Vec<Vec<Fr>> {
+    let mut res = vec![];
+    res.push(l.clone());
+    let mut last = l.clone();
+    while last.len() > 1 {
+        last = compute_level(params, &last);
+        res.push(last.clone());
+    };
+    res
+}
+
+fn adj(i: usize) -> usize {
+    if i % 2 == 1 { i - 1 } else { i + 1 }
+}
+
+fn compute_path(levels: &Vec<Vec<Fr>>, idx: usize) -> (Vec<Fr>, Vec<bool>) {
+    let mut idx = idx;
+    let mut path = vec![];
+    let mut selector = vec![];
+    for i in 0..levels.len()-1 {
+        path.push(levels[i][adj(idx)]);
+        selector.push(idx % 2 == 0);
+        idx = idx/2;
+    }
+    (path, selector)
+} 
+
+pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition>) {
+    let mut level1 = vec![];
+
+    let mut leafs = vec![];
+    let mut paths = vec![];
+    let mut selectors = vec![];
+
+    for i in 0..transitions.len() {
+        leafs.push(Fr::from(0));
+        paths.push(vec![]);
+        selectors.push(vec![]);
+    }
+
+    for tr in transitions.iter() {
+        level1.push(hash_pair(params, &tr.before.hash(params), &tr.after.hash(params)));
+    }
+    let levels = compute_levels(params, &level1);
+
+    for (i,tr) in transitions.iter().enumerate() {
+        let idx = tr.before.step_counter;
+        leafs[idx] = tr.before.hash(params);
+        // Last state
+        if idx == transitions.len() - 1 {
+            leafs.push(tr.after.hash(params))
+        }
+        let (path, sel) = compute_path(&levels, i);
+        paths[idx] = path;
+        selectors[idx] = sel;
+    }
+
+    // 
+
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+
+    let root = levels.last().unwrap()[0].clone();
+
+    merkle_loop(cs, params, paths, &leafs, root, selectors);
+}
+

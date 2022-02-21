@@ -309,7 +309,7 @@ pub struct VM {
     pub locals : Vec<u32>,
     pub control_stack: Vec<ControlFrame>,
     pub pc: Vec<CodeTree>,
-    pub step_counter: u32,
+    pub step_counter: usize,
 }
 
 pub mod add;
@@ -1148,6 +1148,9 @@ fn main() {
         }
 
         let trs = get_transitions(&c);
+
+        merkleloop::handle_loop(&params, trs);
+        return;
 
         /*
         println!("lens break yes {} break no {} loopi {}");
