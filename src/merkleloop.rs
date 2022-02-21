@@ -49,8 +49,6 @@ fn merkle_circuit(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>,
     // TODO: check this
     last.enforce_equal(&root).unwrap();
 
-    println!("circuit has {} constraints", cs.num_constraints());
-
     first
 }
 
@@ -87,6 +85,7 @@ fn merkle_loop(cs: ConstraintSystemRef<Fr>, params : &PoseidonParameters<Fr>, pa
     last.enforce_equal(&end_var).unwrap();
 
     // println!("Testing {}", cs.is_satisfied().unwrap());
+    println!("circuit has {} constraints", cs.num_constraints());
 
 }
 
@@ -158,6 +157,11 @@ use crate::InnerSNARK;
 use ark_crypto_primitives::CircuitSpecificSetupSNARK;
 use ark_crypto_primitives::SNARK;
 
+use crate::aggloop::{OuterSetup,InnerSetup};
+use crate::aggloop::inner_to_outer;
+use crate::aggloop::outer_to_inner;
+use crate::aggloop::{aggregate_list1, aggregate_list2};
+
 pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition>) {
     let mut level1 = vec![];
 
@@ -197,16 +201,25 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     /*
      let cs_sys = ConstraintSystem::<Fr>::new();
      let cs = ConstraintSystemRef::new(cs_sys);
-    merkle_loop(cs, params, &paths, &leafs, root, selectors);
+     merkle_loop(cs, params, &paths, &leafs, root, selectors);
     */
 
-    let circuit = MerkleLoop {
-        params: params.clone(),
-        paths,
-        leafs,
-        root,
-        selectors,
-    };
+    let mut circuits = vec![];
+    let num = 4;
+    let len = transitions.len();
+    let slice = len / num;
+
+    for i in 0..num {
+        circuits.push(MerkleLoop {
+            params: params.clone(),
+            paths: paths[slice*i..slice*(i+1)].to_vec(),
+            leafs: leafs[slice*i..slice*(i+1)+1].to_vec(),
+            root,
+            selectors: selectors[slice*i..slice*(i+1)].to_vec(),
+        });
+    }
+
+    let circuit = circuits[0].clone();
 
     let mut rng = test_rng();
     println!("Setting up circuit");
@@ -215,5 +228,36 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
     println!("proof: {}", InnerSNARK::verify(&vk, &circuit.get_inputs(), &proof).unwrap());
 
+    let setup1 = InnerSetup {
+        pk,
+        vk,
+    };
+
+    let (agg_circuit_out, setup_out) = inner_to_outer(&circuit, &setup1);
+
+    /*
+    let mut setups1 = vec![];
+    let mut setups2 = vec![];
+    let mut agg_circuits1 = vec![];
+    let mut agg_circuits2 = vec![];
+
+    setups1.push(setup_out.clone());
+    agg_circuits1.push(agg_circuit_out);
+
+    for i in 0..3 {
+        let (agg_circuit_in, setup_in) = outer_to_inner(&agg_circuits1[i], &setups1[i]);
+        let (agg_circuit_out, setup_out) = inner_to_outer(&agg_circuit_in, &setup_in);
+        setups2.push(setup_in);
+        setups1.push(setup_out);
+        agg_circuits2.push(agg_circuit_in);
+        agg_circuits1.push(agg_circuit_out);
+    }
+    */
+
+    println!("Starting aggregation");
+
+    let level1 = aggregate_list1(&circuits, &setup1);
+
+    crate::test_circuit2(level1[0].clone());
 }
 

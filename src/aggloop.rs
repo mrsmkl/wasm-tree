@@ -66,7 +66,7 @@ pub trait LoopCircuit2 : ConstraintSynthesizer<MNT6Fr> + Clone {
 }
 
 #[derive(Debug, Clone)]
-struct InnerAggregateLoop {
+pub struct InnerAggregateLoop {
     start_st : Fr,
     mid_st : Fr,
     end_st : Fr,
@@ -183,7 +183,7 @@ fn mnt6(input: &Fr) -> MNT6Fr {
 }
 
 #[derive(Debug, Clone)]
-struct OuterAggregateLoop {
+pub struct OuterAggregateLoop {
     start_st : Fr,
     mid_st : Fr,
     end_st : Fr,
@@ -284,7 +284,7 @@ impl ConstraintSynthesizer<Fr> for OuterAggregateLoop {
 }
 
 #[derive(Debug, Clone)]
-struct InnerSetup {
+pub struct InnerSetup {
     pub pk: InnerSNARKPK,
     pub vk: InnerSNARKVK,
 }
@@ -313,7 +313,7 @@ fn aggregate_level1<C:LoopCircuit>(a: C, b: C, setup: &InnerSetup) -> InnerAggre
 }
 
 #[derive(Debug, Clone)]
-struct OuterSetup {
+pub struct OuterSetup {
     pub pk: OuterSNARKPK,
     pub vk: OuterSNARKVK,
 }
@@ -341,7 +341,7 @@ fn aggregate_level2<C:LoopCircuit2>(a: C, b: C, setup: &OuterSetup) -> OuterAggr
     }
 }
 
-fn outer_to_inner<C: LoopCircuit2>(circuit: &C, setup: &OuterSetup) -> (OuterAggregateLoop, InnerSetup) {
+pub fn outer_to_inner<C: LoopCircuit2>(circuit: &C, setup: &OuterSetup) -> (OuterAggregateLoop, InnerSetup) {
     let mut rng = test_rng();
     let agg_circuit1 = aggregate_level2(circuit.clone(), circuit.clone(), setup);
     let (pk, vk) = InnerSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
@@ -354,7 +354,7 @@ fn outer_to_inner<C: LoopCircuit2>(circuit: &C, setup: &OuterSetup) -> (OuterAgg
     (agg_circuit1, setup2)
 }
 
-fn inner_to_outer<C: LoopCircuit>(circuit: &C, setup: &InnerSetup) -> (InnerAggregateLoop, OuterSetup) {
+pub fn inner_to_outer<C: LoopCircuit>(circuit: &C, setup: &InnerSetup) -> (InnerAggregateLoop, OuterSetup) {
     let mut rng = test_rng();
     let agg_circuit1 = aggregate_level1(circuit.clone(), circuit.clone(), setup);
     let (pk, vk) = OuterSNARK::setup(agg_circuit1.clone(), &mut rng).unwrap();
@@ -367,7 +367,7 @@ fn inner_to_outer<C: LoopCircuit>(circuit: &C, setup: &InnerSetup) -> (InnerAggr
     (agg_circuit1, setup2)
 }
 
-fn aggregate_list2<C: LoopCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<OuterAggregateLoop> {
+pub fn aggregate_list2<C: LoopCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<OuterAggregateLoop> {
     let mut level1 = vec![];
     for i in 0..circuit.len()/2 {
         level1.push(aggregate_level2(circuit[2*i].clone(), circuit[2*i].clone(), setup));
@@ -375,7 +375,7 @@ fn aggregate_list2<C: LoopCircuit2>(circuit: &[C], setup: &OuterSetup) -> Vec<Ou
     level1
 }
 
-fn aggregate_list1<C: LoopCircuit>(circuit: &[C], setup: &InnerSetup) -> Vec<InnerAggregateLoop> {
+pub fn aggregate_list1<C: LoopCircuit>(circuit: &[C], setup: &InnerSetup) -> Vec<InnerAggregateLoop> {
     let mut level1 = vec![];
     for i in 0..circuit.len()/2 {
         level1.push(aggregate_level1(circuit[2*i].clone(), circuit[2*i].clone(), setup));

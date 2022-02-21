@@ -909,14 +909,16 @@ fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     println!("Testing circuit");
-    circuit.generate_constraints(cs);
+    circuit.generate_constraints(cs.clone());
+    println!("Satified: {}", cs.is_satisfied().unwrap());
 }
 
 fn test_circuit2<T: ConstraintSynthesizer<MNT6Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<MNT6Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     println!("Testing circuit");
-    circuit.generate_constraints(cs);
+    circuit.generate_constraints(cs.clone());
+    println!("Satified: {}", cs.is_satisfied().unwrap());
 }
 
 fn setup_circuit<T: InstructionCircuit>(circuit: T) -> (InnerSNARKPK, InnerSNARKVK) {
