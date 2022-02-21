@@ -62,9 +62,7 @@ struct InnerAggregateLoop {
     root : Fr,
     proof1: InnerSNARKProof,
     proof2: InnerSNARKProof,
-    proof_hash: InnerSNARKProof,
     vk: InnerSNARKVK,
-    hash_vk: InnerSNARKVK,
 }
 
 /*
@@ -80,43 +78,44 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
         self,
         cs: ConstraintSystemRef<MNT6Fr>,
     ) -> Result<(), SynthesisError> {
-        let public_var = <InnerSNARKGadget as SNARKGadget<
-            <MNT4PairingEngine as PairingEngine>::Fr,
-            <MNT4PairingEngine as PairingEngine>::Fq,
-            InnerSNARK,
-        >>::InputVar::new_input(ns!(cs, "public_input"), || Ok(vec![self.c.clone()])).unwrap();
 
-        // println!("inner public var {:?}", public_var);
+        let start_var = FpVar::Var(
+            AllocatedFp::<MNT6Fr>::new_input(cs.clone(), || Ok(mnt6(&self.start_st))).unwrap(),
+        );
+        let end_var = FpVar::Var(
+            AllocatedFp::<MNT6Fr>::new_input(cs.clone(), || Ok(mnt6(&self.end_st))).unwrap(),
+        );
+        let root_var = FpVar::Var(
+            AllocatedFp::<MNT6Fr>::new_input(cs.clone(), || Ok(mnt6(&self.root))).unwrap(),
+        );
 
         let input1_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
             <MNT4PairingEngine as PairingEngine>::Fq,
             InnerSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.a.clone()]))
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.start_st.clone(), self.mid_st.clone(), self.root.clone()]))
         .unwrap();
         let input2_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
             <MNT4PairingEngine as PairingEngine>::Fq,
             InnerSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.b.clone()]))
-        .unwrap();
-        let input_hash_gadget = <InnerSNARKGadget as SNARKGadget<
-            <MNT4PairingEngine as PairingEngine>::Fr,
-            <MNT4PairingEngine as PairingEngine>::Fq,
-            InnerSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.a.clone(), self.b.clone(), self.c.clone()]))
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![self.mid_st.clone(), self.end_st.clone(), self.root.clone()]))
         .unwrap();
 
         let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
         let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
-        let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
-        let input_hash_bool_vec = input_hash_gadget.clone().into_iter().collect::<Vec<_>>();
+    
+        let start_bool_vec = start_var.to_bits_le().unwrap();
+        let end_bool_vec = end_var.to_bits_le().unwrap();
+        let root_bool_vec = root_var.to_bits_le().unwrap();
 
-        println!("Input vecs {} {} {}", input1_bool_vec[0].len(), input2_bool_vec[0].len(), input3_bool_vec[0].len());
+        input1_bool_vec[0].enforce_equal(&start_bool_vec)?;
+        input1_bool_vec[1].enforce_equal(&input2_bool_vec[0])?;
+        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
 
-        input1_bool_vec[0].enforce_equal(&input_hash_bool_vec[0])?;
-        input2_bool_vec[0].enforce_equal(&input_hash_bool_vec[1])?;
-        input3_bool_vec[0].enforce_equal(&input_hash_bool_vec[2])?;
+        input1_bool_vec[0].enforce_equal(&input2_bool_vec[0])?;
+        input1_bool_vec[1].enforce_equal(&end_bool_vec)?;
+        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
 
         let proof1_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
@@ -130,23 +129,11 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
             InnerSNARK,
         >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof2))
         .unwrap();
-        let proof_hash_gadget = <InnerSNARKGadget as SNARKGadget<
-            <MNT4PairingEngine as PairingEngine>::Fr,
-            <MNT4PairingEngine as PairingEngine>::Fq,
-            InnerSNARK,
-        >>::ProofVar::new_witness(ns!(cs, "alloc_proof"), || Ok(self.proof_hash))
-        .unwrap();
         let vk_gadget = <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
             <MNT4PairingEngine as PairingEngine>::Fq,
             InnerSNARK,
         >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_vk"), self.vk.clone())
-        .unwrap();
-        let hash_vk_gadget = <InnerSNARKGadget as SNARKGadget<
-            <MNT4PairingEngine as PairingEngine>::Fr,
-            <MNT4PairingEngine as PairingEngine>::Fq,
-            InnerSNARK,
-        >>::VerifyingKeyVar::new_constant(ns!(cs, "alloc_hash_vk"), self.hash_vk.clone())
         .unwrap();
         <InnerSNARKGadget as SNARKGadget<
             <MNT4PairingEngine as PairingEngine>::Fr,
@@ -157,10 +144,6 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
         .enforce_equal(&Boolean::constant(true))
         .unwrap();
         InnerSNARKGadget::verify(&vk_gadget, &input2_gadget, &proof2_gadget)
-        .unwrap()
-        .enforce_equal(&Boolean::constant(true))
-        .unwrap();
-        InnerSNARKGadget::verify(&hash_vk_gadget, &input_hash_gadget, &proof_hash_gadget)
         .unwrap()
         .enforce_equal(&Boolean::constant(true))
         .unwrap();
@@ -189,13 +172,13 @@ fn mnt6(input: &Fr) -> MNT6Fr {
 
 #[derive(Debug, Clone)]
 struct OuterAggregateLoop {
-    a : Fr,
-    b : Fr,
-    c : Fr,
+    start_st : Fr,
+    mid_st : Fr,
+    end_st : Fr,
+    root : Fr,
     proof1: OuterSNARKProof,
     proof2: OuterSNARKProof,
     vk: OuterSNARKVK,
-    params: PoseidonParameters<Fr>,
 }
 
 /*
@@ -213,56 +196,43 @@ impl ConstraintSynthesizer<Fr> for OuterAggregateLoop {
         self,
         cs: ConstraintSystemRef<Fr>,
     ) -> Result<(), SynthesisError> {
-        let public_var = <OuterSNARKGadget as SNARKGadget<
-            <MNT6PairingEngine as PairingEngine>::Fr,
-            <MNT6PairingEngine as PairingEngine>::Fq,
-            OuterSNARK,
-        >>::InputVar::new_witness(ns!(cs, "public_input"), || Ok(vec![mnt6(&self.c)])).unwrap();
+        let start_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.start_st.clone())).unwrap(),
+        );
+        let end_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.end_st.clone())).unwrap(),
+        );
+        let root_var = FpVar::Var(
+            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.root.clone())).unwrap(),
+        );
 
         let input1_gadget = <OuterSNARKGadget as SNARKGadget<
             <MNT6PairingEngine as PairingEngine>::Fr,
             <MNT6PairingEngine as PairingEngine>::Fq,
             OuterSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![mnt6(&self.a)]))
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![mnt6(&self.start_st), mnt6(&self.mid_st), mnt6(&self.root)]))
         .unwrap();
         let input2_gadget = <OuterSNARKGadget as SNARKGadget<
             <MNT6PairingEngine as PairingEngine>::Fr,
             <MNT6PairingEngine as PairingEngine>::Fq,
             OuterSNARK,
-        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![mnt6(&self.b)]))
+        >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![mnt6(&self.mid_st), mnt6(&self.end_st), mnt6(&self.root)]))
         .unwrap();
 
-        let input1_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
-
-        println!("Input vecs {}", input1_bool_vec[0].len());
-
-        // inputs for hashing
-        let a_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(self.a.clone())).unwrap(),
-        );
-        let b_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(self.b.clone())).unwrap(),
-        );
-        let c_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.c.clone())).unwrap(),
-        );
-        let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(self.params.clone())).unwrap();
-        let mut inputs = Vec::new();
-        inputs.push(a_var.clone());
-        inputs.push(b_var.clone());
-        let hash_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs).unwrap();
-        hash_gadget.enforce_equal(&c_var)?;
-    
-        let a_bits = a_var.to_bits_le().unwrap();
-        let b_bits = b_var.to_bits_le().unwrap();
-        let c_bits = c_var.to_bits_le().unwrap();
-    
         let input1_bool_vec = input1_gadget.clone().into_iter().collect::<Vec<_>>();
         let input2_bool_vec = input2_gadget.clone().into_iter().collect::<Vec<_>>();
-        let input3_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
-        input1_bool_vec[0].enforce_equal(&a_bits)?;
-        input2_bool_vec[0].enforce_equal(&b_bits)?;
-        input3_bool_vec[0].enforce_equal(&c_bits)?;
+    
+        let start_bool_vec = start_var.to_bits_le().unwrap();
+        let end_bool_vec = end_var.to_bits_le().unwrap();
+        let root_bool_vec = root_var.to_bits_le().unwrap();
+
+        input1_bool_vec[0].enforce_equal(&start_bool_vec)?;
+        input1_bool_vec[1].enforce_equal(&input2_bool_vec[0])?;
+        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
+
+        input1_bool_vec[0].enforce_equal(&input2_bool_vec[0])?;
+        input1_bool_vec[1].enforce_equal(&end_bool_vec)?;
+        input1_bool_vec[2].enforce_equal(&root_bool_vec)?;
     
         let proof1_gadget = <OuterSNARKGadget as SNARKGadget<
             <MNT6PairingEngine as PairingEngine>::Fr,
