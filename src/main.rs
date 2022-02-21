@@ -903,6 +903,7 @@ fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> Ou
 }
 
 pub mod merkleloop;
+pub mod aggloop;
 
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
