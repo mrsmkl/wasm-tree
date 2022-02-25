@@ -24,13 +24,13 @@ use crate::CodeTree;
 pub struct MemoryCircuit {
     pub transitions: Vec<(VM,VM)>,
     pub params: PoseidonParameters<Fr>,
-    pub start_idx: usize,
-    pub start_step: usize,
-    pub start_value: usize,
+    pub start_addr: u32,
+    pub start_step: u32,
+    pub start_value: u32,
 
-    pub end_idx: usize,
-    pub end_step: usize,
-    pub end_value: usize,
+    pub end_addr: u32,
+    pub end_step: u32,
+    pub end_value: u32,
 }
 
 fn get_info(vm: &VM) -> (u32, bool) {
@@ -76,7 +76,6 @@ fn generate_step(
     let step_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(before.step_counter as u32))).unwrap());
     let step_after_var = step_var.clone() + FpVar::Constant(Fr::from(0));
 
-    let read_before_var = state.value.clone();
     let read_after_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(after.locals[idx as usize]))).unwrap());
 
     let stack_base_hash = if is_set {
@@ -171,101 +170,70 @@ fn generate_step(
     
 }
 
-/*
+use crate::hash_pair;
+
+fn hash_tree(params: &PoseidonParameters<Fr>, trs: Vec<(VM,VM)>) -> Fr {
+    let mut tree = vec![];
+    for (a,b) in trs {
+        tree.push(hash_pair(&params, &a.hash(&params), &b.hash(&params)));
+    }
+    while tree.len() > 1 {
+        let mut next_vars = vec![];
+        for i in 0..tree.len()/2 {
+            let hash_var = hash_pair(&params, &tree[2*i].clone(), &tree[2*i+1].clone());
+            next_vars.push(hash_var);
+        }
+        tree= next_vars;
+    }
+    tree[0]
+}
+
 impl ConstraintSynthesizer<Fr> for MemoryCircuit {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<Fr>,
     ) -> Result<(), SynthesisError> {
-        let before = self.before.clone();
-        let after = self.after.clone();
-
-        println!("before {:?}", before);
-        println!("after {:?}", after);
-    
-        let pc_hash = hash_code(&self.params, &after.pc);
-        let stack_hash = after.hash_stack(&self.params);
-        // let locals_hash = before.hash_locals(&self.params);
-        let control_hash = before.hash_control(&self.params);
-
-        let public_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(self.calc_hash())).unwrap(),
-        );
-
         let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(self.params.clone())).unwrap();
+        ////
+        let first_step_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(Fr::from(self.start_step))).unwrap());
+        let first_addr_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(Fr::from(self.start_addr))).unwrap());
+        let first_value_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(Fr::from(self.start_value))).unwrap());
+        let end_step_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(Fr::from(self.end_step))).unwrap());
+        let end_addr_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(Fr::from(self.end_addr))).unwrap());
+        let end_value_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(Fr::from(self.end_value))).unwrap());
 
-        let bool_var = Boolean::from(
-            AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(self.idx == 1)).unwrap(),
-        );
+        let root_hash = hash_tree(&self.params, self.transitions.clone());
+        let root_var = FpVar::Var(AllocatedFp::<Fr>::new_input(cs.clone(), || Ok(root_hash)).unwrap());
 
-        let locals_a = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(before.locals[0]))).unwrap(),
-        );
-        let locals_b = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(before.locals[1]))).unwrap(),
-        );
-        let read_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(after.locals[self.idx]))).unwrap(),
-        );
-        let locals_after_a = bool_var.select(&locals_a, &read_var).unwrap();
-        let locals_after_b = bool_var.select(&read_var, &locals_b).unwrap();
+        let mut state = MemoryState {
+            step: first_step_var,
+            addr: first_addr_var,
+            value: first_value_var,
+        };
+        let mut tr_vars = vec![];
+        for (before, after) in self.transitions.clone() {
+            let (idx, is_set) = get_info(&before);
+            let (tr_var, next_state) = generate_step(cs.clone(), &self.params, &params_g, before, after, state, idx, is_set)?;
+            state = next_state;
+            tr_vars.push(tr_var);
+        }
 
-        let stack_after_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(stack_hash)).unwrap(),
-        );
-        let control_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(control_hash)).unwrap(),
-        );
+        // Check end state
+        end_step_var.enforce_equal(&state.step)?;
+        end_addr_var.enforce_equal(&state.addr)?;
+        end_value_var.enforce_equal(&state.value)?;
 
-        let hash_pc_after_var = FpVar::Var(
-            AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(pc_hash)).unwrap(),
-        );
-    
-        let locals_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![locals_a, locals_b]).unwrap();
-        let locals_after_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![locals_after_a, locals_after_b]).unwrap();
-
-        let stack_before_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-            read_var.clone(), stack_after_var.clone()
-        ]).unwrap();
-
-        let mut inputs_pc = Vec::new();
-        inputs_pc.push(FpVar::Constant(Fr::from(5)));
-        inputs_pc.push(From::from(bool_var.clone()));
-        inputs_pc.push(hash_pc_after_var.clone());
-        let hash_pc_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_pc).unwrap();
-
-        println!("stack before {}", before.hash_stack(&self.params));
-        // println!("stack before {}", stack_before_var.value().unwrap());
-        println!("pc hash {}", hash_code(&self.params, &before.pc));
-        // println!("pc hash {}", hash_pc_gadget.value().unwrap());
-
-        // Compute VM hash before
-        let mut inputs_vm_before = Vec::new();
-        inputs_vm_before.push(hash_pc_gadget);
-        inputs_vm_before.push(stack_before_var);
-        inputs_vm_before.push(locals_var.clone());
-        inputs_vm_before.push(control_var.clone());
-        let hash_vm_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_before).unwrap();
-
-        // Compute VM hash after
-        let mut inputs_vm_after = Vec::new();
-        inputs_vm_after.push(hash_pc_after_var);
-        inputs_vm_after.push(stack_after_var);
-        inputs_vm_after.push(locals_after_var);
-        inputs_vm_after.push(control_var.clone());
-        let hash_vm_after_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_after).unwrap();
-
-        let mut inputs_transition = Vec::new();
-        inputs_transition.push(hash_vm_before_gadget.clone());
-        inputs_transition.push(hash_vm_after_gadget.clone());
-        let hash_transition_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_transition).unwrap();
-        hash_transition_gadget.enforce_equal(&public_var)?;
-
-        println!("Made circuit");
-        println!("before {}, after {}", before.hash(&self.params), after.hash(&self.params));
-        // println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+        // Generate merkle tree
+        while tr_vars.len() > 1 {
+            let mut next_vars = vec![];
+            for i in 0..tr_vars.len()/2 {
+                let hash_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![tr_vars[2*i].clone(), tr_vars[2*i+1].clone()]).unwrap();
+                next_vars.push(hash_var);
+            }
+            tr_vars = next_vars;
+        }
+        root_var.enforce_equal(&tr_vars[0])?;
 
         Ok(())
     }
 }
-*/
