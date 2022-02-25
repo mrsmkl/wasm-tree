@@ -83,7 +83,6 @@ impl ConstraintSynthesizer<Fr> for BreakYesCircuit {
         );
 
         // check that read var non zero
-        // TODO: what's wrong???
         let cmp_var = read_var.is_eq(&FpVar::constant(Fr::from(0))).unwrap();
         cmp_var.enforce_equal(&Boolean::constant(false)).unwrap();
 

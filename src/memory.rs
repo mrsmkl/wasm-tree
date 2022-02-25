@@ -12,6 +12,7 @@ use ark_relations::r1cs::ConstraintSystemRef;
 use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
+use std::cmp::Ordering;
 
 use crate::{VM,Transition,hash_code};
 use crate::InstructionCircuit;
@@ -88,9 +89,14 @@ fn generate_step(
         FpVar::Constant(Fr::from(5)), idx_var.clone(), pc_after_var.clone()
     ]).unwrap();
 
-    // Validity of set
-    // Two cases, default value or stored value
-    // let default_var = FpVar::Constant(Fr::from(0));
+    //// Validity of set
+    // Two cases, same address or new address (larger)
+    let same_address_var = state.addr.is_eq(&idx_var).unwrap();
+    // Check if step counter is larger
+    let step_counter_larger = step_var.is_cmp(&state.step, Ordering::Greater, false)?;
+    let address_greater = idx_var.is_cmp(&state.addr, Ordering::Greater, false).unwrap();
+
+    let valid_set = same_address_var.and(&step_counter_larger).unwrap().or(&address_greater)?;
 
     // Generate get
     let stack_before_get = stack_base_var.clone();
@@ -101,10 +107,19 @@ fn generate_step(
         FpVar::Constant(Fr::from(4)), idx_var.clone(), pc_after_var.clone()
     ]).unwrap();
 
+    // Validity of get
+    // Two cases, default value (new address) or stored value
+    let default_var = FpVar::Constant(Fr::from(0));
+    let check_var = same_address_var.select(&state.value, &default_var)?;
+    let valid_get = check_var.is_eq(&read_after_var)?.and(&valid_set)?;
+
     // Select set or get
     let stack_before_var = bool_var.select(&stack_before_set, &stack_before_get).unwrap();
     let stack_after_var = bool_var.select(&stack_after_set, &stack_after_get).unwrap();
     let hash_pc_before_var = bool_var.select(&hash_pc_before_set, &hash_pc_before_get).unwrap();
+
+    let valid_var = bool_var.select(&valid_set, &valid_get).unwrap();
+    valid_var.enforce_equal(&Boolean::constant(true));
 
     // Compute VM hash before
     let mut inputs_vm_before = Vec::new();
