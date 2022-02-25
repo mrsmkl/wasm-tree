@@ -323,6 +323,8 @@ pub mod endi;
 pub mod breakno;
 pub mod breakyes;
 
+pub mod memory;
+
 use crate::add::AddCircuit;
 use crate::sub::SubCircuit;
 use crate::gt::GtCircuit;
