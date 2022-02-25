@@ -16,15 +16,29 @@ use std::cmp::Ordering;
 
 use crate::{VM,Transition,hash_code};
 use crate::InstructionCircuit;
+use crate::CodeTree;
 
 // use ark_r1cs_std::R1CSVar;
 
 #[derive(Debug, Clone)]
 pub struct MemoryCircuit {
-    pub before: VM,
-    pub after: VM,
+    pub transitions: Vec<(VM,VM)>,
     pub params: PoseidonParameters<Fr>,
-    pub idx: usize,
+    pub start_idx: usize,
+    pub start_step: usize,
+    pub start_value: usize,
+
+    pub end_idx: usize,
+    pub end_step: usize,
+    pub end_value: usize,
+}
+
+fn get_info(vm: &VM) -> (u32, bool) {
+    match vm.pc[0].clone() {
+        CodeTree::CSetLocal(i) => (i, true),
+        CodeTree::CGetLocal(i) => (i, false),
+        _ => panic!("Not a memory instruction")
+    }
 }
 
 /*
@@ -41,6 +55,7 @@ impl InstructionCircuit for SetCircuit {
 }
 */
 
+#[derive(Debug, Clone)]
 struct MemoryState {
     addr: FpVar<Fr>,
     step: FpVar<Fr>,
@@ -54,7 +69,7 @@ fn generate_step(
     before: VM,
     after: VM,
     state: MemoryState,
-    idx: usize, // memory index
+    idx: u32, // memory index
     is_set: bool, // is get or set
 ) -> Result<(FpVar<Fr>, MemoryState), SynthesisError> {
     // Generate variables
@@ -62,7 +77,7 @@ fn generate_step(
     let step_after_var = step_var.clone() + FpVar::Constant(Fr::from(0));
 
     let read_before_var = state.value.clone();
-    let read_after_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(after.locals[idx]))).unwrap());
+    let read_after_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(after.locals[idx as usize]))).unwrap());
 
     let stack_base_hash = if is_set {
         after.hash_stack(&params)
@@ -119,7 +134,7 @@ fn generate_step(
     let hash_pc_before_var = bool_var.select(&hash_pc_before_set, &hash_pc_before_get).unwrap();
 
     let valid_var = bool_var.select(&valid_set, &valid_get).unwrap();
-    valid_var.enforce_equal(&Boolean::constant(true));
+    valid_var.enforce_equal(&Boolean::constant(true))?;
 
     // Compute VM hash before
     let mut inputs_vm_before = Vec::new();

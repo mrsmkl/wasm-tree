@@ -163,6 +163,7 @@ impl ConstraintSynthesizer<MNT6Fr> for InnerAggregateLoop {
     }
 }
 
+/*
 fn convert_inputs(inputs: &[Fr]) -> Vec<MNT6Fr> {
     inputs
         .iter()
@@ -171,7 +172,7 @@ fn convert_inputs(inputs: &[Fr]) -> Vec<MNT6Fr> {
                 .into_repr()).unwrap()
         })
         .collect::<Vec<_>>()
-}
+}*/
 
 fn mnt6(input: &Fr) -> MNT6Fr {
     MNT6Fr::from_repr(input.into_repr()).unwrap()

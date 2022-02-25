@@ -173,7 +173,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     let mut paths = vec![];
     let mut selectors = vec![];
 
-    for i in 0..transitions.len() {
+    for _i in 0..transitions.len() {
         leafs.push(Fr::from(0));
         paths.push(vec![]);
         selectors.push(vec![]);
@@ -265,7 +265,7 @@ pub fn handle_loop(params : &PoseidonParameters<Fr>, transitions: Vec<Transition
     let mut prev_level = level1;
     for i in 0..2 {
         println!("Level {} first len {}", i, prev_level.len());
-        let mut level2 = aggregate_list2(&prev_level, &setups1[i]);
+        let level2 = aggregate_list2(&prev_level, &setups1[i]);
         println!("Level {} second len {}", i, level2.len());
         if level2.len() == 1 {
             let last = level2[0].clone();

@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use parity_wasm::elements::Instruction::*;
 use parity_wasm::elements::*;
 use std::fs::File;
@@ -251,36 +253,6 @@ fn generate_hash() -> PoseidonParameters<Fr> {
         test_b.push(Fr::rand(&mut test_rng));
     }
     PoseidonParameters::<Fr>::new(8, 24, 31, mds, ark)
-
-}
-
-fn generate_outer_hash() -> PoseidonParameters<MNT6Fr> {
-    let mut test_rng = ark_std::test_rng();
-
-    // TODO: The following way of generating the MDS matrix is incorrect
-    // and is only for test purposes.
-
-    let mut mds = vec![vec![]; 3];
-    for i in 0..3 {
-        for _ in 0..3 {
-            mds[i].push(MNT6Fr::rand(&mut test_rng));
-        }
-    }
-
-    let mut ark = vec![vec![]; 8 + 24];
-    for i in 0..8 + 24 {
-        for _ in 0..3 {
-            ark[i].push(MNT6Fr::rand(&mut test_rng));
-        }
-    }
-
-    let mut test_a = Vec::new();
-    let mut test_b = Vec::new();
-    for _ in 0..3 {
-        test_a.push(MNT6Fr::rand(&mut test_rng));
-        test_b.push(MNT6Fr::rand(&mut test_rng));
-    }
-    PoseidonParameters::<MNT6Fr>::new(8, 24, 31, mds, ark)
 
 }
 
@@ -702,6 +674,7 @@ fn convert_inputs(inputs: &[Fr]) -> Vec<MNT6Fr> {
         .collect::<Vec<_>>()
 }
 
+/*
 fn convert_inputs2(inputs: &[MNT6Fr]) -> Vec<Fr> {
     inputs
         .iter()
@@ -710,7 +683,7 @@ fn convert_inputs2(inputs: &[MNT6Fr]) -> Vec<Fr> {
                 .into_repr()).unwrap()
         })
         .collect::<Vec<_>>()
-}
+}*/
 
 fn mnt6(input: &Fr) -> MNT6Fr {
     MNT6Fr::from_repr(input.into_repr()).unwrap()
@@ -759,10 +732,6 @@ impl ConstraintSynthesizer<Fr> for OuterAggregationCircuit {
             OuterSNARK,
         >>::InputVar::new_witness(ns!(cs, "new_input"), || Ok(vec![mnt6(&self.b)]))
         .unwrap();
-
-        let input1_bool_vec = public_var.clone().into_iter().collect::<Vec<_>>();
-
-        // println!("Input vecs {}", input1_bool_vec[0].len());
 
         // inputs for hashing
         let a_var = FpVar::Var(
@@ -908,19 +877,21 @@ pub mod merkleloop;
 pub mod aggloop;
 pub mod aggfinal;
 
+#[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     println!("Testing circuit");
-    circuit.generate_constraints(cs.clone());
+    circuit.generate_constraints(cs.clone()).unwrap();
     println!("Satified: {}", cs.is_satisfied().unwrap());
 }
 
+#[allow(dead_code)]
 fn test_circuit2<T: ConstraintSynthesizer<MNT6Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<MNT6Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     println!("Testing circuit");
-    circuit.generate_constraints(cs.clone());
+    circuit.generate_constraints(cs.clone()).unwrap();
     println!("Satified: {}", cs.is_satisfied().unwrap());
 }
 
@@ -940,7 +911,7 @@ struct SelectionCircuit {
     proof: InnerSNARKProof,
     keys: Vec<InnerSNARKVK>,
     idx: u32,
-    transition: Transition,
+    // transition: Transition,
 }
 
 impl InstructionCircuit2 for SelectionCircuit {
@@ -1040,13 +1011,12 @@ fn make_circuits<C: InstructionCircuit>(circuits: &mut Vec<SelectionCircuit>, ls
             proof: proof,
             keys: keys.iter().map(|a| a.1.clone()).collect(),
             idx: idx as u32,
-            transition: i.transition(),
+            // transition: i.transition(),
         });
     }
 }
 
 fn get_transition<C: InstructionCircuit>(circuits: &mut Vec<Transition>, lst: &[C]) {
-    let mut rng = test_rng();
     for i in lst {
         circuits.push(i.transition());
     }
@@ -1195,7 +1165,7 @@ fn main() {
             proof: proof,
             keys: keys.iter().map(|a| a.1.clone()).collect(),
             idx: 12,
-            transition: c.add[0].transition(),
+            // transition: c.add[0].transition(),
         };
 
         let (pk, vk) = OuterSNARK::setup(circuit.clone(), &mut rng).unwrap();
@@ -1256,7 +1226,7 @@ fn main() {
         let mut prev_level = level1;
         for i in 0..2 {
             println!("Level {} first len {}", i, prev_level.len());
-            let mut level2 = aggregate_list1(&prev_level, &setups2[i]);
+            let level2 = aggregate_list1(&prev_level, &setups2[i]);
             println!("Level {} second len {}", i, level2.len());
             if level2.len() == 1 {
                 let last = level2[0].clone();

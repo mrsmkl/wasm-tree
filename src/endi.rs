@@ -52,7 +52,7 @@ impl ConstraintSynthesizer<Fr> for EndCircuit {
         let cont_hash = hash_code(&self.params, &cont);
         let start_hash = hash_code(&self.params, &start);
 
-        let pc_hash = hash_code(&self.params, &after.pc);
+        // let pc_hash = hash_code(&self.params, &after.pc);
         let pc_other_hash = hash_code(&self.params, &before.pc[1..]);
         let stack_hash = before.hash_stack(&self.params);
         let locals_hash = before.hash_locals(&self.params);
