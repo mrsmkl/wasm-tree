@@ -127,7 +127,7 @@ fn generate_step(
         valid_get.value().unwrap(),
         valid_var.value().unwrap(),
     );
-    // valid_var.enforce_equal(&Boolean::constant(true))?;
+    valid_var.enforce_equal(&Boolean::constant(true))?;
 
     // Compute VM hash before
     let mut inputs_vm_before = Vec::new();
