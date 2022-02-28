@@ -828,8 +828,14 @@ fn aggregate_level1<C:InstructionCircuit>(a: C, b: C, setup: &InnerSetup) -> Inn
         params: setup.params.clone(),
     };
 
+    let start = Instant::now();
     let proof1 = InnerSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let elapsed = start.elapsed();
+    println!("proving took {} ms", elapsed.as_millis());
+    let start = Instant::now();
     let proof2 = InnerSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+    let elapsed = start.elapsed();
+    println!("proving took {} ms", elapsed.as_millis());
     let proof_hash = InnerSNARK::prove(&setup.hash_pk, hash_circuit.clone(), &mut rng).unwrap();
 
     let hash3 = hash_circuit.calc_hash();
@@ -860,13 +866,21 @@ struct OuterSetup {
     pub params: PoseidonParameters<Fr>,
 }
 
+use std::time::Instant;
+
 fn aggregate_level2<C:InstructionCircuit2>(a: C, b: C, setup: &OuterSetup) -> OuterAggregationCircuit {
     let mut rng = test_rng();
     let hash1 = a.calc_hash();
     let hash2 = b.calc_hash();
 
+    let start = Instant::now();
     let proof1 = OuterSNARK::prove(&setup.pk, a.clone(), &mut rng).unwrap();
+    let elapsed = start.elapsed();
+    println!("proving took {} ms", elapsed.as_millis());
+    let start = Instant::now();
     let proof2 = OuterSNARK::prove(&setup.pk, b.clone(), &mut rng).unwrap();
+    let elapsed = start.elapsed();
+    println!("proving took {} ms", elapsed.as_millis());
 
     println!("proof1: {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash1.clone()]), &proof1).unwrap());
     println!("proof2: {}", OuterSNARK::verify(&setup.vk, &convert_inputs(&vec![hash2.clone()]), &proof2).unwrap());
@@ -1136,9 +1150,9 @@ fn main() {
 
         let trs = get_transitions(&c);
 
-        memory::test_memory(&params, trs);
+        // memory::test_memory(&params, trs);
 
-        return;
+        // return;
 
         let (loop_proof, loop_vk, start_st, end_st) = merkleloop::handle_loop(&params, trs);
 

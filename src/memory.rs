@@ -20,6 +20,16 @@ use crate::CodeTree;
 
 use ark_r1cs_std::R1CSVar;
 
+/*
+Why does it work?
+ * there are N instructions
+ * requirement: each instruction has to be used once
+ * each instruction increments counter
+ * so the counter in the end just has to be N
+ * an instruction cannot be used twice because after the counter has been incremented, it's impossible to apply the instruction anymore
+
+*/
+
 #[derive(Debug, Clone)]
 pub struct MemoryCircuit {
     pub transitions: Vec<Transition>,
