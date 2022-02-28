@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 parity-wasm = "0.42"
-ark-crypto-primitives = { path = "/home/sami/ark/crypto-primitives", features = [ "r1cs" ] }
-# ark-crypto-primitives = { path = "/Users/samimakela/ark/crypto-primitives", features = [ "r1cs" ] }
+# ark-crypto-primitives = { path = "/home/sami/ark/crypto-primitives", features = [ "r1cs" ] }
+ark-crypto-primitives = { path = "/Users/samimakela/ark/crypto-primitives", features = [ "r1cs" ] }
 ark-std = "^0.3.0"
 ark-ff = { version = "^0.3.0", features = [ "asm" ] }
 ark-ec = "^0.3.0"
@@ -18,5 +18,5 @@ ark-mnt4-298 = { version = "^0.3.0", features = ["r1cs", "curve"] }
 ark-mnt6-298 = { version = "^0.3.0", features = ["r1cs"] }
 ark-relations = "^0.3.0"
 ark-r1cs-std = "^0.3.0"
-ark-groth16 = { path = "/home/sami/ark/groth16", features = [ "r1cs" ] }
-# ark-groth16 = { path = "/Users/samimakela/ark/groth16", features = [ "r1cs" ] }
+# ark-groth16 = { path = "/home/sami/ark/groth16", features = [ "r1cs" ] }
+ark-groth16 = { path = "/Users/samimakela/ark/groth16", features = [ "r1cs" ] }
