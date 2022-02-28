@@ -354,6 +354,15 @@ impl VM {
         CRH::<Fr>::evaluate(&params, inputs).unwrap()
     }
 
+    fn hash_mem(&self, params: &PoseidonParameters<Fr>) -> Fr {
+        let mut inputs = vec![];
+        inputs.push(hash_code(&params, &self.pc));
+        inputs.push(self.hash_stack(&params));
+        inputs.push(Fr::from(self.step_counter as u32));
+        inputs.push(self.hash_control(&params));
+        CRH::<Fr>::evaluate(&params, inputs).unwrap()
+    }
+
     fn incr_pc(&mut self) {
         self.pc = self.pc[1..].iter().map(|a| a.clone()).collect::<Vec<CodeTree>>();
     }
@@ -1126,6 +1135,10 @@ fn main() {
         }
 
         let trs = get_transitions(&c);
+
+        memory::test_memory(&params, trs);
+
+        return;
 
         let (loop_proof, loop_vk, start_st, end_st) = merkleloop::handle_loop(&params, trs);
 

@@ -18,11 +18,11 @@ use crate::{VM,Transition,hash_code};
 use crate::InstructionCircuit;
 use crate::CodeTree;
 
-// use ark_r1cs_std::R1CSVar;
+use ark_r1cs_std::R1CSVar;
 
 #[derive(Debug, Clone)]
 pub struct MemoryCircuit {
-    pub transitions: Vec<(VM,VM)>,
+    pub transitions: Vec<Transition>,
     pub params: PoseidonParameters<Fr>,
     pub start_addr: u32,
     pub start_step: u32,
@@ -40,20 +40,6 @@ fn get_info(vm: &VM) -> (u32, bool) {
         _ => panic!("Not a memory instruction")
     }
 }
-
-/*
-impl InstructionCircuit for SetCircuit {
-    fn calc_hash(&self) -> Fr {
-        let mut inputs = vec![];
-        inputs.push(self.before.hash(&self.params));
-        inputs.push(self.after.hash(&self.params));
-        CRH::<Fr>::evaluate(&self.params, inputs).unwrap()
-    }
-    fn transition(&self) -> Transition {
-        Transition { before: self.before.clone(), after: self.after.clone() }
-    }
-}
-*/
 
 #[derive(Debug, Clone)]
 struct MemoryState {
@@ -157,8 +143,8 @@ fn generate_step(
     let hash_transition_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_transition).unwrap();
 
     println!("Made memory op");
-    println!("before {}, after {}", before.hash(&params), after.hash(&params));
-    // println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
+    println!("before {}, after {}", before.hash_mem(&params), after.hash_mem(&params));
+    println!("before {}, after {}", hash_vm_before_gadget.value().unwrap(), hash_vm_after_gadget.value().unwrap());
 
     let next_state = MemoryState {
         addr: idx_var,
@@ -172,10 +158,10 @@ fn generate_step(
 
 use crate::hash_pair;
 
-fn hash_tree(params: &PoseidonParameters<Fr>, trs: Vec<(VM,VM)>) -> Fr {
+fn hash_tree(params: &PoseidonParameters<Fr>, trs: Vec<Transition>) -> Fr {
     let mut tree = vec![];
-    for (a,b) in trs {
-        tree.push(hash_pair(&params, &a.hash(&params), &b.hash(&params)));
+    for tr in trs {
+        tree.push(hash_pair(&params, &tr.before.hash_mem(&params), &tr.after.hash_mem(&params)));
     }
     while tree.len() > 1 {
         let mut next_vars = vec![];
@@ -211,9 +197,9 @@ impl ConstraintSynthesizer<Fr> for MemoryCircuit {
             value: first_value_var,
         };
         let mut tr_vars = vec![];
-        for (before, after) in self.transitions.clone() {
-            let (idx, is_set) = get_info(&before);
-            let (tr_var, next_state) = generate_step(cs.clone(), &self.params, &params_g, before, after, state, idx, is_set)?;
+        for tr in self.transitions.clone() {
+            let (idx, is_set) = get_info(&tr.before);
+            let (tr_var, next_state) = generate_step(cs.clone(), &self.params, &params_g, tr.before, tr.after, state, idx, is_set)?;
             state = next_state;
             tr_vars.push(tr_var);
         }
@@ -237,3 +223,54 @@ impl ConstraintSynthesizer<Fr> for MemoryCircuit {
         Ok(())
     }
 }
+
+// Sorting memory ops
+
+struct MemOp {
+    tr: Transition,
+    idx: u32,
+    step: u32,
+}
+
+fn get_memory(ts: Vec<Transition>) -> Vec<Transition> {
+    let mut res = vec![];
+    for t in ts {
+        match t.before.pc[0] {
+            CodeTree::CSetLocal(idx) => res.push(MemOp {tr: t.clone(), idx, step: t.before.step_counter as u32}),
+            CodeTree::CGetLocal(idx) => res.push(MemOp {tr: t.clone(), idx, step: t.before.step_counter as u32}),
+            _ => {},
+        }
+    };
+    res.sort_by(|a, b| ((a.idx,a.step)).cmp(&(b.idx,b.step)));
+    res.iter().map(|a| a.tr.clone()).collect()
+}
+
+fn get_last_value(ts: &Vec<Transition>) -> u32 {
+    for tr in ts.iter().rev() {
+        match tr.before.pc[0] {
+            CodeTree::CSetLocal(_) => return *tr.before.expr_stack.last().unwrap(),
+            _ => {},
+        }
+    };
+    return 0;
+}
+
+pub fn test_memory(params: &PoseidonParameters<Fr>, ts: Vec<Transition>) {
+    let transitions = get_memory(ts);
+    let last = transitions.last().unwrap().clone();
+    let first = transitions[0].clone();
+    let end_value = get_last_value(&transitions);
+    let circuit = MemoryCircuit {
+        transitions,
+        params: params.clone(),
+        start_addr: 0,
+        start_step: first.before.step_counter as u32,
+        start_value: 0,
+    
+        end_addr: 1,
+        end_step: last.before.step_counter as u32,
+        end_value,
+    };
+    crate::test_circuit(circuit);
+}
+
