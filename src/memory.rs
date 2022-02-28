@@ -129,6 +129,8 @@ fn generate_step(
     inputs_vm_before.push(control_var.clone());
     let hash_vm_before_gadget = CRHGadget::<Fr>::evaluate(&params_g, &inputs_vm_before).unwrap();
 
+    println!("stack after {}, should be {}", stack_after_var.value().unwrap(), after.hash_stack(&params));
+
     // Compute VM hash after
     let mut inputs_vm_after = Vec::new();
     inputs_vm_after.push(pc_after_var);
