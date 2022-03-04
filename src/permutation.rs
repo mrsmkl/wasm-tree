@@ -53,15 +53,18 @@ fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: IntegerPe
                 Some(switch_val) => {
                     let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(switch_val)).unwrap());
                     let (v1, v2) = make_switch(cs.clone(), permutation[packet_idx].clone(), permutation[packet_idx+1].clone(), bool_var);
-                    next_permutation[switch1.0] = v1;
-                    next_permutation[switch1.1] = v2;
+                    next_permutation[switch1.0] = v2;
+                    next_permutation[switch1.1] = v1;
                 }
             }
         }
         permutation = next_permutation;
+        println!("{} variable states {:?}", column_idx, permutation.iter().map(|v| v.value().unwrap().to_string()).collect::<Vec<_>>());
     }
     permutation
 }
+
+use ark_relations::r1cs::ConstraintSystem;
 
 pub fn test_permutation() {
     let size = 16;
@@ -75,4 +78,14 @@ pub fn test_permutation() {
     println!("topology {:?} {}", topology, topology.topology.len());
     println!("route {:?} {}", route, route.switches.len());
     println!("checking {:?}", route.calculate_permutation());
+
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    let mut vars = vec![];
+    for i in 0..size {
+        let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
+        vars.push(var);
+    }
+
+    let vars_perm = permutation(cs.clone(), vars.clone(), perm.clone());
 }
