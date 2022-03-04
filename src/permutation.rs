@@ -18,17 +18,61 @@ use crate::{VM,Transition,hash_code};
 use crate::InstructionCircuit;
 use crate::CodeTree;
 
-use ark_r1cs_std::R1CSVar;
+use crate::as_waksman::IntegerPermutation;
 
-mod as_waksman;
+use ark_r1cs_std::R1CSVar;
+use crate::as_waksman::AsWaksmanRoute;
+use crate::as_waksman::AsWaksmanTopology;
 
 fn make_switch(cs: ConstraintSystemRef<Fr>, a: FpVar<Fr>, b: FpVar<Fr>, switch: Boolean<Fr>) -> (FpVar<Fr>,FpVar<Fr>) {
-    let out1 = bool_var.select(&a, &b);
-    let out2 = bool_var.select(&b, &a);
+    let out1 = switch.select(&a, &b).unwrap();
+    let out2 = switch.select(&b, &a).unwrap();
     (out1, out2)
 }
 
 // get a list of variables and integer permutation?
+fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: IntegerPermutation) -> Vec<FpVar<Fr>> {
+    let size = lst.len();
+    let topology = AsWaksmanTopology::new(size);
+    let num_columns = AsWaksmanTopology::num_colunms(size);
+    let route = AsWaksmanRoute::new(&perm);
+    let mut permutation = lst.clone();
+    for column_idx in 0..num_columns {
+        let mut next_permutation = permutation.clone();
+        for packet_idx in 0..size/2 {
+            let packet_idx = packet_idx*2;
+            let switch1 = topology.topology[column_idx][packet_idx];
+            let switch2 = topology.topology[column_idx][packet_idx+1];
+            match route.switches[column_idx].get(&packet_idx) {
+                // If is none, means straight switch (for both)
+                None => {
+                    assert!(switch1.0 == switch1.1 && switch2.0 == switch2.1);
+                    next_permutation[switch1.0] = permutation[packet_idx].clone();
+                    next_permutation[switch2.0] = permutation[packet_idx+1].clone();
+                }
+                Some(switch_val) => {
+                    let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(switch_val)).unwrap());
+                    let (v1, v2) = make_switch(cs.clone(), permutation[packet_idx].clone(), permutation[packet_idx+1].clone(), bool_var);
+                    next_permutation[switch1.0] = v1;
+                    next_permutation[switch1.1] = v2;
+                }
+            }
+        }
+        permutation = next_permutation;
+    }
+    permutation
+}
 
-
-
+pub fn test_permutation() {
+    let size = 16;
+    let mut perm = IntegerPermutation::new(size);
+    for i in 0..size {
+        perm.set(i, size-1-i);
+    }
+    let topology = AsWaksmanTopology::new(size);
+    let route = AsWaksmanRoute::new(&perm);
+    println!("premut {:?}", perm);
+    println!("topology {:?} {}", topology, topology.topology.len());
+    println!("route {:?} {}", route, route.switches.len());
+    println!("checking {:?}", route.calculate_permutation());
+}

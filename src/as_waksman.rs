@@ -1,12 +1,9 @@
 // from https://github.com/matter-labs-archive/sapling-crypto/blob/master/src/as_waksman.rs
 
-use rand::{
-    Rng
-};
-
 const EMPTY_STATE: usize = std::usize::MAX;
 
 // this is basically a grid of size x columns
+#[derive(Debug,Clone)]
 pub struct AsWaksmanTopology {
     pub topology: Vec<Vec<(usize, usize)>>,
     pub size: usize
@@ -168,7 +165,7 @@ impl AsWaksmanTopology {
 // Integer representation should always be generated starting from 0 and only internal calls should
 // generate it from non-zero start
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct IntegerPermutation {
     pub elements: Vec<usize>,
     pub min: usize,
@@ -197,12 +194,6 @@ impl IntegerPermutation {
     pub fn size(&self) -> usize {
         self.max - self.min + 1
         // self.elements.len()
-    }
-
-    pub fn make_permutation<R: Rng>(&mut self, rng: &mut R) {
-        let mut copy = self.elements.clone();
-        rng.shuffle(&mut copy);
-        self.elements = copy;
     }
 
     pub fn get(&self, index: usize) -> usize {
@@ -259,6 +250,7 @@ impl IntegerPermutation {
 }
 
 // this is basically a grid of size x columns
+#[derive(Debug,Clone)]
 pub struct AsWaksmanRoute {
     pub switches: Vec<std::collections::HashMap<usize, bool>>,
     pub size: usize
@@ -537,7 +529,7 @@ impl AsWaksmanRoute {
         }
     }
 
-    fn validate_routing_for_permutation(permutation: &IntegerPermutation,
+    pub fn validate_routing_for_permutation(permutation: &IntegerPermutation,
                                         routing: &Self) -> bool 
     {
         let size = permutation.size();
@@ -629,7 +621,7 @@ impl AsWaksmanRoute {
 
     // this function forwards newly created ordered set [0, n) into the permutation by switches
     // that were supplied to the router
-    fn calculate_permutation(&self) -> IntegerPermutation 
+    pub fn calculate_permutation(&self) -> IntegerPermutation 
     {
         let num_columns = AsWaksmanTopology::num_colunms(self.size);
         let topology = AsWaksmanTopology::new(self.size);
@@ -672,6 +664,7 @@ impl AsWaksmanRoute {
             
             // permutation that we keep a track on is now replaced by result of permutation by this column
             permutation = permutation_by_this_column;
+            println!("{} got perm {:?}", column_idx, permutation);
         }
 
         permutation.inverse()

@@ -527,27 +527,18 @@ fn convert_inputs(inputs: &[Fr]) -> Vec<MNT6Fr> {
         .collect::<Vec<_>>()
 }
 
-/*
-fn convert_inputs2(inputs: &[MNT6Fr]) -> Vec<Fr> {
-    inputs
-        .iter()
-        .map(|input| {
-            Fr::from_repr(input
-                .into_repr()).unwrap()
-        })
-        .collect::<Vec<_>>()
-}*/
-
 fn mnt6(input: &Fr) -> MNT6Fr {
     MNT6Fr::from_repr(input.into_repr()).unwrap()
 }
 
 pub mod aggtransition;
-
 pub mod merkleloop;
 pub mod aggloop;
 pub mod aggfinal;
 pub mod select;
+
+pub mod permutation;
+pub mod as_waksman;
 
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
@@ -613,6 +604,10 @@ use crate::aggtransition::OuterSetup;
 use crate::aggtransition::HashCircuit;
 
 fn main() {
+    crate::permutation::test_permutation();
+}
+
+fn main2() {
 
     let buffer = get_file("test.wasm".into());
 
