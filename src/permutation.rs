@@ -59,7 +59,7 @@ fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: IntegerPe
             }
         }
         permutation = next_permutation;
-        println!("{} variable states {:?}", column_idx, permutation.iter().map(|v| v.value().unwrap().to_string()).collect::<Vec<_>>());
+        // println!("{} variable states {:?}", column_idx, permutation.iter().map(|v| v.value().unwrap().to_string()).collect::<Vec<_>>());
     }
     permutation
 }
@@ -67,17 +67,19 @@ fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: IntegerPe
 use ark_relations::r1cs::ConstraintSystem;
 
 pub fn test_permutation() {
-    let size = 16;
+    let size = 1 << 10;
     let mut perm = IntegerPermutation::new(size);
     for i in 0..size {
         perm.set(i, size-1-i);
     }
+    /*
     let topology = AsWaksmanTopology::new(size);
     let route = AsWaksmanRoute::new(&perm);
     println!("premut {:?}", perm);
     println!("topology {:?} {}", topology, topology.topology.len());
     println!("route {:?} {}", route, route.switches.len());
     println!("checking {:?}", route.calculate_permutation());
+    */
 
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
@@ -88,4 +90,5 @@ pub fn test_permutation() {
     }
 
     let vars_perm = permutation(cs.clone(), vars.clone(), perm.clone());
+    println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
 }

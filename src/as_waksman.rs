@@ -664,7 +664,7 @@ impl AsWaksmanRoute {
             
             // permutation that we keep a track on is now replaced by result of permutation by this column
             permutation = permutation_by_this_column;
-            println!("{} got perm {:?}", column_idx, permutation);
+            // println!("{} got perm {:?}", column_idx, permutation);
         }
 
         permutation.inverse()
