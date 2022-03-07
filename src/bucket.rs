@@ -177,6 +177,28 @@ fn route_buckets(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutation {
 }
 
 // make merkle tree from variables
+fn hash_tree(
+    cs: ConstraintSystemRef<Fr>,
+    params: &PoseidonParameters<Fr>,
+    params_g: &CRHParametersVar::<Fr>,
+    vars: Vec<FpVar<Fr>>
+) -> Vec<Vec<FpVar<Fr>>> {
+    let mut tree = vec![];
+    tree.push(vars.clone());
+    let mut level = vars;
+    while level.len() > 1 {
+        let next_level = vec![];
+        for i in 0..level/2 {
+            let var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
+                read_after_var.clone(), stack_base_var.clone()
+            ]).unwrap();
+            next_level.push(var);
+        }
+        tree.push(next_level.clone());
+        level = next_level;
+    }
+    tree
+}
 
 // zero sized buckets will also have a slice, they will get constant zero as input
 
