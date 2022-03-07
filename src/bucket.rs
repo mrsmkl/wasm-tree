@@ -3,6 +3,14 @@ use crate::as_waksman::AsWaksmanRoute;
 use crate::as_waksman::AsWaksmanTopology;
 use crate::Transition;
 
+use ark_mnt4_298::Fr;
+use ark_crypto_primitives::crh::poseidon::constraints::CRHGadget;
+use ark_r1cs_std::fields::fp::FpVar;
+use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
+use ark_crypto_primitives::CRHSchemeGadget;
+use ark_sponge::poseidon::PoseidonParameters;
+use ark_relations::r1cs::ConstraintSystemRef;
+
 // use ark_r1cs_std::R1CSVar;
 
 #[derive(Debug, Clone)]
@@ -131,8 +139,8 @@ fn route_bucket_contents(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutat
 // compute idx of bucket in the tree
 // bottom level has lowest indices
 fn compute_idx(b: &Bucket, elems: usize) -> i32 {
-    let mut sz = *b.slice_size;
-    let mut level_idx = *b.slice_start;
+    let mut sz = b.slice_size;
+    let mut level_idx = b.slice_start;
     let mut elems = elems;
     let mut level_acc = 0;
     while sz > 1 {
@@ -158,7 +166,7 @@ fn route_buckets(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutation {
     let size = total_size(elems);
     let mut list : Vec<i32> = vec![-1; size];
     for bucket in buckets.iter() {
-        list[bucket.idx] = compute_idx(buckt, elems);
+        list[bucket.idx] = compute_idx(bucket, elems);
     };
     let mut acc = buckets.len();
     // route zeroes
@@ -187,10 +195,10 @@ fn hash_tree(
     tree.push(vars.clone());
     let mut level = vars;
     while level.len() > 1 {
-        let next_level = vec![];
-        for i in 0..level/2 {
+        let mut next_level = vec![];
+        for i in 0..level.len()/2 {
             let var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
-                read_after_var.clone(), stack_base_var.clone()
+                level[2*i].clone(), level[2*i+1].clone()
             ]).unwrap();
             next_level.push(var);
         }
