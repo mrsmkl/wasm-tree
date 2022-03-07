@@ -9,6 +9,8 @@ use crate::Transition;
 struct Bucket {
     list: Vec<usize>,
     idx: usize,
+    slice_start: usize,
+    slice_size: usize,
 }
 
 impl Bucket {
@@ -16,7 +18,20 @@ impl Bucket {
         Bucket {
             list: vec![],
             idx,
+            slice_start: 0,
+            slice_size: 0,
         }
+    }
+    fn set_slice(&self, slice_start: usize, slice_size: usize) -> Self {
+        Bucket {
+            list: self.list.clone(),
+            idx: self.idx,
+            slice_start,
+            slice_size,
+        }
+    }
+    fn size(&self) -> usize {
+        self.list.len()
     }
 }
 
@@ -63,11 +78,55 @@ impl Slices {
                     sz = sz/2;
                     self.slices.push((sz, next_idx));
                     next_idx = next_idx - sz/2;
-                }
+                };
+                self.slices[i] = (0,0);
                 return (sz, idx)
             }
         }
         panic!("Cannot find slice");
     }
 }
+
+
+fn make_bucket_slices(mut buckets: Vec<Bucket>) -> Vec<Bucket> {
+    // sort buckets by size
+    buckets.sort_by(|a, b| (a.list.len()).cmp(&b.list.len()));
+    let mut slices = Slices::new(buckets.len());
+    let mut res = vec![];
+    for b in buckets.iter() {
+        let (start, idx) = slices.reserve(b.size());
+        res.push(b.set_slice(start, idx));
+    };
+    res
+}
+
+// route buckets to the bottom of the tree
+// elems is the number of elems in the buckets
+fn route_bucket_contents(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutation {
+    let mut list : Vec<i32> = vec![-1; elems*2-1];
+    for bucket in buckets.iter() {
+        let start = bucket.slice_start;
+        for (i, idx) in bucket.list.iter().enumerate() {
+            list[start+i] = *idx as i32;
+        }
+    };
+    let mut acc = elems;
+    // route zeroes
+    for i in 0..list.len() {
+        if list[i] == -1 {
+            list[i] = acc as i32;
+            acc += 1;
+        }
+    }
+    // create permutation
+    let mut perm = IntegerPermutation::new(elems*2-1);
+    for i in 0..list.len() {
+        perm.set(i, list[i] as usize);
+    }
+    perm
+}
+
+// route buckets from the merkle tree
+
+// make merkle tree from variables
 
