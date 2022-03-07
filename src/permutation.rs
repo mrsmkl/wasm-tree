@@ -31,7 +31,7 @@ fn make_switch(cs: ConstraintSystemRef<Fr>, a: FpVar<Fr>, b: FpVar<Fr>, switch: 
 }
 
 // get a list of variables and integer permutation?
-fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: IntegerPermutation) -> Vec<FpVar<Fr>> {
+pub fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: IntegerPermutation) -> Vec<FpVar<Fr>> {
     let size = lst.len();
     let topology = AsWaksmanTopology::new(size);
     let num_columns = AsWaksmanTopology::num_colunms(size);

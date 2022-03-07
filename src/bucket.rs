@@ -186,23 +186,26 @@ fn route_buckets(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutation {
 
 // make merkle tree from variables
 fn hash_tree(
-    cs: ConstraintSystemRef<Fr>,
+    cs: &ConstraintSystemRef<Fr>,
     params: &PoseidonParameters<Fr>,
     params_g: &CRHParametersVar::<Fr>,
-    vars: Vec<FpVar<Fr>>
-) -> Vec<Vec<FpVar<Fr>>> {
+    vars: &[FpVar<Fr>],
+) -> Vec<FpVar<Fr>> {
     let mut tree = vec![];
-    tree.push(vars.clone());
-    let mut level = vars;
+    for v in vars.iter() {
+        tree.push(v.clone());
+    }
+    let mut level : Vec<_> = vars.iter().map(|a| a.clone()).collect();
     while level.len() > 1 {
         let mut next_level = vec![];
         for i in 0..level.len()/2 {
             let var = CRHGadget::<Fr>::evaluate(&params_g, &vec![
                 level[2*i].clone(), level[2*i+1].clone()
             ]).unwrap();
+            tree.push(var.clone());
             next_level.push(var);
         }
-        tree.push(next_level.clone());
+        // tree.push(next_level.clone());
         level = next_level;
     }
     tree
@@ -210,4 +213,31 @@ fn hash_tree(
 
 // zero sized buckets will also have a slice, they will get constant zero as input
 
+fn compute_buckets(
+    cs: ConstraintSystemRef<Fr>,
+    params: &PoseidonParameters<Fr>,
+    params_g: &CRHParametersVar::<Fr>,
+    vars: Vec<FpVar<Fr>>,
+    trs: &Vec<Transition>,
+    bucket_size: usize,
+    num_buckets: usize,
+) -> FpVar<Fr> {
+    let elems = trs.len();
+    let buckets = make_buckets(trs, bucket_size, num_buckets);
+    let buckets = make_bucket_slices(buckets);
+    let perm1 = route_bucket_contents(&buckets, elems);
+    // use permutation
+    let mut vars = vars.clone();
+    let zero_var = FpVar::Constant(Fr::from(0));
+    while vars.len() < elems*2-1 {
+        vars.push(zero_var.clone());
+    }
+    let tree_bottom = crate::permutation::permutation(cs.clone(), vars, perm1);
+    let tree_vars = hash_tree(&cs, &params, &params_g, &tree_bottom);
+    // use second permutation
+    let perm2 = route_buckets(&buckets, elems);
+    let bucket_vars = crate::permutation::permutation(cs.clone(), tree_vars, perm2);
+    let bucket_tree_vars = hash_tree(&cs, &params, &params_g, &bucket_vars[0..num_buckets]);
+    bucket_tree_vars.last().unwrap().clone()
+}
 
