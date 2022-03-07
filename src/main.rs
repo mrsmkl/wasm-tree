@@ -540,6 +540,8 @@ pub mod select;
 pub mod permutation;
 pub mod as_waksman;
 
+pub mod bucket;
+
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
