@@ -126,7 +126,58 @@ fn route_bucket_contents(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutat
     perm
 }
 
-// route buckets from the merkle tree
+////// route buckets from the merkle tree
+
+// compute idx of bucket in the tree
+// bottom level has lowest indices
+fn compute_idx(b: &Bucket, elems: usize) -> i32 {
+    let mut sz = *b.slice_size;
+    let mut level_idx = *b.slice_start;
+    let mut elems = elems;
+    let mut level_acc = 0;
+    while sz > 1 {
+        sz = sz/2;
+        level_acc += elems*2-1;
+        elems = elems/2;
+        level_idx = level_idx/2;
+    }
+    (level_idx + level_acc) as i32
+}
+
+fn total_size(elems: usize) -> usize {
+    let mut elems = elems;
+    let mut size = 0;
+    while elems > 0 {
+        size += elems*2-1;
+        elems = elems/2;
+    }
+    size
+}
+
+fn route_buckets(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutation {
+    let size = total_size(elems);
+    let mut list : Vec<i32> = vec![-1; size];
+    for bucket in buckets.iter() {
+        list[bucket.idx] = compute_idx(buckt, elems);
+    };
+    let mut acc = buckets.len();
+    // route zeroes
+    for i in 0..list.len() {
+        if list[i] == -1 {
+            list[i] = acc as i32;
+            acc += 1;
+        }
+    }
+    // create permutation
+    let mut perm = IntegerPermutation::new(size);
+    for i in 0..list.len() {
+        perm.set(i, list[i] as usize);
+    }
+    perm
+}
 
 // make merkle tree from variables
+
+// zero sized buckets will also have a slice, they will get constant zero as input
+
 
