@@ -67,7 +67,9 @@ fn hash_step(
     let a_sum_var = FpVar::conditionally_select_power_of_two_vector(&a_bools, &input_sums).unwrap();
     let b_sum_var = FpVar::conditionally_select_power_of_two_vector(&b_bools, &input_sums).unwrap();
 
-    let c_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![a_var, b_var]).unwrap();
+    let c_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![a_var.clone(), b_var.clone()]).unwrap();
+    // let c_var = a_var + b_var;
+    // let c_sum_var = a_var + b_var;
     let c_sum_var = a_sum_var + b_sum_var;
 
     let mut outputs = vec![];
@@ -142,8 +144,9 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
     let cs = ConstraintSystemRef::new(cs_sys);
     let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
 
-    let size = 1;
-    let mem_size = 32;
+    let size = 1024*2;
+    let mem_size_bits = 4;
+    let mem_size = 1 << mem_size_bits;
 
     let mut vars = vec![];
     let mut inputs = vec![];
@@ -162,7 +165,7 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
             input: -1,
         });
     }
-    for i in 0..mem_size {
+    for i in 0..mem_size-1 {
         let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
         vars.push(var);
         let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
@@ -173,7 +176,7 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
         var_sums, // memory sums (probably zeros)
         inputs, // inputs, make permutation
         input_sums, // inputs, make permutation
-        mem_size,
+        mem_size_bits,
     );
     println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
 }

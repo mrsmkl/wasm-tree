@@ -606,8 +606,13 @@ use crate::aggtransition::inner_to_outer;
 use crate::aggtransition::OuterSetup;
 use crate::aggtransition::HashCircuit;
 
-fn main() {
+fn main3() {
     crate::permutation::test_permutation();
+}
+
+fn main() {
+    let params = generate_hash();
+    crate::tree::test_tree(&params);
 }
 
 fn main2() {
