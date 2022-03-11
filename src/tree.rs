@@ -14,6 +14,8 @@ use ark_r1cs_std::prelude::CondSelectGadget;
 use ark_r1cs_std::boolean::AllocatedBool;
 use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::alloc::AllocVar;
+use ark_r1cs_std::eq::EqGadget;
+use ark_r1cs_std::fields::fp::AllocatedFp;
 
 #[derive(Debug, Clone)]
 struct Step {
@@ -57,5 +59,12 @@ fn hash_step(
     let c_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![a_var, b_var]).unwrap();
 
     let mut outputs = vec![];
+    let c_idx_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(step.c as u32))).unwrap());
+    for (i,v) in vars.iter().enumerate() {
+        let idx_var = FpVar::Constant(Fr::from(i as u32));
+        let bool_var = idx_var.is_eq(&c_idx_var).unwrap();
+        let out_var = bool_var.select(&c_var, &v).unwrap();
+        outputs.push(out_var);
+    };
     outputs
 }
