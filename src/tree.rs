@@ -68,3 +68,47 @@ fn hash_step(
     };
     outputs
 }
+
+fn route_steps(steps: &Vec<Step>) -> IntegerPermutation {
+    let mut list : Vec<i32> = vec![-1; steps.len()];
+    let mut num = 0;
+    for (i,step) in steps.iter().enumerate() {
+        list[i] = step.input;
+        if step.input >= 0 {
+            num += 1
+        }
+    };
+    // route zeroes
+    for i in 0..list.len() {
+        if list[i] == -1 {
+            list[i] = num as i32;
+            num += 1;
+        }
+    }
+    // create permutation
+    let mut perm = IntegerPermutation::new(steps.len());
+    for i in 0..list.len() {
+        perm.set(i, list[i] as usize);
+    }
+    perm
+}
+
+fn hash_steps(
+    cs: &ConstraintSystemRef<Fr>,
+    steps: Vec<Step>,
+    params: &PoseidonParameters<Fr>,
+    params_g: &CRHParametersVar::<Fr>,
+    vars: Vec<FpVar<Fr>>, // memory
+    inputs: Vec<FpVar<Fr>>, // inputs, make permutation
+    mem_size: usize,
+) -> FpVar<Fr> {
+    // first permute inputs
+    let route = route_steps(&steps);
+    let inputs = crate::permutation::permutation(cs.clone(), inputs, route);
+    let mut vars = vars.clone();
+    for (i, step) in steps.iter().enumerate() {
+        vars = hash_step(cs, step.clone(), params, params_g, &vars, inputs[i].clone(), mem_size);
+    }
+    vars[0].clone()
+}
+
