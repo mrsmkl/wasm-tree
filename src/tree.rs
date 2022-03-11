@@ -23,7 +23,8 @@ struct Step {
     a: usize,
     b: usize,
     c: usize,
-    input: i32,
+    input1: i32,
+    input2: i32,
 }
 
 fn make_bools(cs: &ConstraintSystemRef<Fr>, mem_size: usize, a: usize) -> Vec<Boolean<Fr>> {
@@ -43,20 +44,24 @@ fn hash_step(
     params_g: &CRHParametersVar::<Fr>,
     vars: &[FpVar<Fr>], // memory
     var_sums: &[FpVar<Fr>], // memory
-    input: FpVar<Fr>, // input from permutation
-    input_sum: FpVar<Fr>, // input from permutation
+    input1: FpVar<Fr>, // input from permutation
+    input1_sum: FpVar<Fr>, // input from permutation
+    input2: FpVar<Fr>, // input from permutation
+    input2_sum: FpVar<Fr>, // input from permutation
     mem_size: usize,
 ) -> (Vec<FpVar<Fr>>, Vec<FpVar<Fr>>) { // output memory
     let mut inputs = vec![];
     for v in vars.iter() {
         inputs.push(v.clone());
     }
-    inputs.push(input);
+    inputs.push(input1);
+    inputs.push(input2);
     let mut input_sums = vec![];
     for v in var_sums.iter() {
         input_sums.push(v.clone());
     }
-    input_sums.push(input_sum);
+    input_sums.push(input1_sum);
+    input_sums.push(input2_sum);
 
     let a_bools = make_bools(cs, mem_size, step.a);
     let b_bools = make_bools(cs, mem_size, step.b);
@@ -86,12 +91,36 @@ fn hash_step(
     (outputs, output_sums)
 }
 
-fn route_steps(steps: &Vec<Step>) -> IntegerPermutation {
+fn route_steps1(steps: &Vec<Step>) -> IntegerPermutation {
     let mut list : Vec<i32> = vec![-1; steps.len()];
     let mut num = 0;
     for (i,step) in steps.iter().enumerate() {
-        list[i] = step.input;
-        if step.input >= 0 {
+        list[i] = step.input1;
+        if step.input1 >= 0 {
+            num += 1
+        }
+    };
+    // route zeroes
+    for i in 0..list.len() {
+        if list[i] == -1 {
+            list[i] = num as i32;
+            num += 1;
+        }
+    }
+    // create permutation
+    let mut perm = IntegerPermutation::new(steps.len());
+    for i in 0..list.len() {
+        perm.set(i, list[i] as usize);
+    }
+    perm
+}
+
+fn route_steps2(steps: &Vec<Step>) -> IntegerPermutation {
+    let mut list : Vec<i32> = vec![-1; steps.len()];
+    let mut num = 0;
+    for (i,step) in steps.iter().enumerate() {
+        list[i] = step.input2;
+        if step.input2 >= 0 {
             num += 1
         }
     };
@@ -122,17 +151,25 @@ fn hash_steps(
     mem_size: usize,
 ) -> (FpVar<Fr>, FpVar<Fr>) {
     // first permute inputs
-    let route = route_steps(&steps);
+    let route1 = route_steps1(&steps);
+    let route2 = route_steps2(&steps);
     // actually both have to be permuted the same way...
     let mut inputs_with_sums = vec![];
     for i in 0..inputs.len() {
         inputs_with_sums.push(vec![inputs[i].clone(), input_sums[i].clone()])
     }
-    let inputs_with_sums = crate::permutation::permutation_list(cs.clone(), inputs_with_sums, route);
+    let inputs_with_sums1 = crate::permutation::permutation_list(cs.clone(), inputs_with_sums.clone(), route1);
+    let inputs_with_sums2 = crate::permutation::permutation_list(cs.clone(), inputs_with_sums, route2);
     let mut vars = vars.clone();
     let mut var_sums = var_sums.clone();
     for (i, step) in steps.iter().enumerate() {
-        let a = hash_step(cs, step.clone(), params, params_g, &vars, &var_sums, inputs_with_sums[i][0].clone(), inputs_with_sums[i][1].clone(), mem_size);
+        let a = hash_step(cs, step.clone(), params, params_g, &vars, &var_sums,
+            inputs_with_sums1[i][0].clone(),
+            inputs_with_sums1[i][1].clone(),
+            inputs_with_sums2[i][0].clone(),
+            inputs_with_sums2[i][1].clone(),
+            mem_size,
+        );
         vars = a.0;
         var_sums = a.1;
     }
@@ -162,10 +199,11 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
             a: 0,
             b: 0,
             c: 0,
-            input: -1,
+            input1: -1,
+            input2: -1,
         });
     }
-    for i in 0..mem_size-1 {
+    for i in 0..mem_size-2 {
         let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
         vars.push(var);
         let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
