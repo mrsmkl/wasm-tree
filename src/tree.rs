@@ -41,14 +41,21 @@ fn hash_step(
     params: &PoseidonParameters<Fr>,
     params_g: &CRHParametersVar::<Fr>,
     vars: &[FpVar<Fr>], // memory
+    var_sums: &[FpVar<Fr>], // memory
     input: FpVar<Fr>, // input from permutation
+    input_sum: FpVar<Fr>, // input from permutation
     mem_size: usize,
-) -> Vec<FpVar<Fr>> { // output memory
+) -> (Vec<FpVar<Fr>>, Vec<FpVar<Fr>>) { // output memory
     let mut inputs = vec![];
     for v in vars.iter() {
         inputs.push(v.clone());
     }
     inputs.push(input);
+    let mut input_sums = vec![];
+    for v in var_sums.iter() {
+        input_sums.push(v.clone());
+    }
+    input_sums.push(input_sum);
 
     let a_bools = make_bools(cs, mem_size, step.a);
     let b_bools = make_bools(cs, mem_size, step.b);
@@ -56,17 +63,24 @@ fn hash_step(
     let a_var = FpVar::conditionally_select_power_of_two_vector(&a_bools, &inputs).unwrap();
     let b_var = FpVar::conditionally_select_power_of_two_vector(&b_bools, &inputs).unwrap();
 
+    let a_sum_var = FpVar::conditionally_select_power_of_two_vector(&a_bools, &input_sums).unwrap();
+    let b_sum_var = FpVar::conditionally_select_power_of_two_vector(&b_bools, &input_sums).unwrap();
+
     let c_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![a_var, b_var]).unwrap();
+    let c_sum_var = a_sum_var + b_sum_var;
 
     let mut outputs = vec![];
+    let mut output_sums = vec![];
     let c_idx_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(step.c as u32))).unwrap());
     for (i,v) in vars.iter().enumerate() {
         let idx_var = FpVar::Constant(Fr::from(i as u32));
         let bool_var = idx_var.is_eq(&c_idx_var).unwrap();
         let out_var = bool_var.select(&c_var, &v).unwrap();
+        let out_sum_var = bool_var.select(&c_sum_var, &var_sums[i]).unwrap();
         outputs.push(out_var);
+        output_sums.push(out_sum_var);
     };
-    outputs
+    (outputs, output_sums)
 }
 
 fn route_steps(steps: &Vec<Step>) -> IntegerPermutation {
@@ -99,16 +113,26 @@ fn hash_steps(
     params: &PoseidonParameters<Fr>,
     params_g: &CRHParametersVar::<Fr>,
     vars: Vec<FpVar<Fr>>, // memory
+    var_sums: Vec<FpVar<Fr>>, // memory sums (probably zeros)
     inputs: Vec<FpVar<Fr>>, // inputs, make permutation
+    input_sums: Vec<FpVar<Fr>>, // inputs, make permutation
     mem_size: usize,
-) -> FpVar<Fr> {
+) -> (FpVar<Fr>, FpVar<Fr>) {
     // first permute inputs
     let route = route_steps(&steps);
-    let inputs = crate::permutation::permutation(cs.clone(), inputs, route);
-    let mut vars = vars.clone();
-    for (i, step) in steps.iter().enumerate() {
-        vars = hash_step(cs, step.clone(), params, params_g, &vars, inputs[i].clone(), mem_size);
+    // actually both have to be permuted the same way...
+    let mut inputs_with_sums = vec![];
+    for i in 0..inputs.len() {
+        inputs_with_sums.push(vec![inputs[i].clone(), input_sums[i].clone()])
     }
-    vars[0].clone()
+    let inputs_with_sums = crate::permutation::permutation_list(cs.clone(), inputs_with_sums, route);
+    let mut vars = vars.clone();
+    let mut var_sums = var_sums.clone();
+    for (i, step) in steps.iter().enumerate() {
+        let a = hash_step(cs, step.clone(), params, params_g, &vars, &var_sums, inputs_with_sums[i][0].clone(), inputs_with_sums[i][1].clone(), mem_size);
+        vars = a.0;
+        var_sums = a.1;
+    }
+    (vars[0].clone(), var_sums[0].clone())
 }
 
