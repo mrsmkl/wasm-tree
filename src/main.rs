@@ -541,6 +541,7 @@ pub mod permutation;
 pub mod as_waksman;
 
 pub mod bucket;
+pub mod tree;
 
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
