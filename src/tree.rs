@@ -16,6 +16,7 @@ use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::AllocatedFp;
+use ark_relations::r1cs::ConstraintSystem;
 
 #[derive(Debug, Clone)]
 struct Step {
@@ -136,3 +137,43 @@ fn hash_steps(
     (vars[0].clone(), var_sums[0].clone())
 }
 
+pub fn test_tree(params: &PoseidonParameters<Fr>) {
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
+
+    let size = 1;
+    let mem_size = 32;
+
+    let mut vars = vec![];
+    let mut inputs = vec![];
+    let mut var_sums = vec![];
+    let mut input_sums = vec![];
+    let mut steps = vec![];
+    for i in 0..size {
+        let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
+        inputs.push(var);
+        let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
+        input_sums.push(var);
+        steps.push(Step {
+            a: 0,
+            b: 0,
+            c: 0,
+            input: -1,
+        });
+    }
+    for i in 0..mem_size {
+        let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
+        vars.push(var);
+        let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(i as u32))).unwrap());
+        var_sums.push(var);
+    }
+    hash_steps(&cs, steps, &params, &params_g,
+        vars,
+        var_sums, // memory sums (probably zeros)
+        inputs, // inputs, make permutation
+        input_sums, // inputs, make permutation
+        mem_size,
+    );
+    println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
+}
