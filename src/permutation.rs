@@ -49,22 +49,25 @@ pub fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: Integ
     let mut permutation = lst.clone();
     for column_idx in 0..num_columns {
         let mut next_permutation = permutation.clone();
-        for packet_idx in 0..size/2 {
-            let packet_idx = packet_idx*2;
-            let switch1 = topology.topology[column_idx][packet_idx];
-            let switch2 = topology.topology[column_idx][packet_idx+1];
-            match route.switches[column_idx].get(&packet_idx) {
+        // println!("column topology {:?}", topology.topology[column_idx]);
+        let mut p_idx = 0;
+        while p_idx < size {
+            let switch1 = topology.topology[column_idx][p_idx];
+            match route.switches[column_idx].get(&p_idx) {
                 // If is none, means straight switch (for both)
                 None => {
-                    assert!(switch1.0 == switch1.1 && switch2.0 == switch2.1);
-                    next_permutation[switch1.0] = permutation[packet_idx].clone();
-                    next_permutation[switch2.0] = permutation[packet_idx+1].clone();
+                    // println!("1: {:?}, 2: {:?}", switch1, switch2);
+                    assert!(switch1.0 == switch1.1);
+                    next_permutation[switch1.0] = permutation[p_idx].clone();
+                    p_idx += 1;
                 }
                 Some(switch_val) => {
+                    let switch2 = topology.topology[column_idx][p_idx+1];
                     let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(switch_val)).unwrap());
-                    let (v1, v2) = make_switch(cs.clone(), permutation[packet_idx].clone(), permutation[packet_idx+1].clone(), bool_var);
+                    let (v1, v2) = make_switch(cs.clone(), permutation[p_idx].clone(), permutation[p_idx+1].clone(), bool_var);
                     next_permutation[switch1.0] = v2;
                     next_permutation[switch1.1] = v1;
+                    p_idx += 2;
                 }
             }
         }
