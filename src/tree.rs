@@ -52,7 +52,7 @@ fn hash_tree(
         perm.set(i*2, *a);
         perm.set(i*2+1, *b);
     }
-    println!("permutation {:?}", perm);
+    // println!("permutation {:?}", perm);
     let inputs = crate::permutation::permutation(cs.clone(), inputs, perm);
     // create hashes, check that inner nodes are correct
     for (i, (a,b)) in tree.nodes.iter().enumerate() {
@@ -70,7 +70,7 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
     let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
 
     let mut acc = 0;
-    let mut sz = 16;
+    let mut sz = 1024;
     let mut vars = vec![];
     let mut inputs = vec![];
     for i in 0..sz {
@@ -86,7 +86,7 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
         acc += sz;
         sz = sz/2;
     }
-    println!("{:?}", nodes);
+    // println!("{:?}", nodes);
     let tree = Tree {nodes};
     hash_tree(&cs, &tree, &params, &params_g, &vars, &inputs);
     println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
