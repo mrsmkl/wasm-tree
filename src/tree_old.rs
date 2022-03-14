@@ -18,52 +18,6 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::AllocatedFp;
 use ark_relations::r1cs::ConstraintSystem;
 
-use crate::hash_pair;
-
-#[derive(Debug, Clone)]
-struct Tree {
-    nodes: Vec<(usize, usize)>,
-}
-
-fn hash_tree(
-    cs: &ConstraintSystemRef<Fr>,
-    tree: &Tree,
-    params: &PoseidonParameters<Fr>,
-    params_g: &CRHParametersVar::<Fr>,
-    inputs: &Vec<FpVar<Fr>>, // Some of these inputs might be zeroes
-    values: &Vec<Fr>, // computed values of inputs
-) -> FpVar<Fr> {
-    // add nodes to values
-    let mut values = values.clone();
-    // inputs and internal nodes
-    let mut inputs = inputs.clone();
-    let mut nodes = vec![];
-    // route inputs
-    let mut perm = IntegerPermutation::new(inputs.len() + tree.nodes.len() - 1);
-    for (i, (a,b)) in tree.nodes.iter().enumerate() {
-        let h = hash_pair(&params, &values[*a], &values[*b]);
-        values.push(h.clone());
-        let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(h)).unwrap());
-        // last node only has output
-        if i != tree.nodes.len() - 1 {
-            inputs.push(var.clone());
-        }
-        nodes.push(var.clone());
-        perm.set(i*2, *a);
-        perm.set(i*2+1, *b);
-    }
-    let inputs = crate::permutation::permutation(cs.clone(), inputs, perm);
-    // create hashes, check that inner nodes are correct
-    for (i, (a,b)) in tree.nodes.iter().enumerate() {
-        let a_var = inputs[*a].clone();
-        let b_var = inputs[*b].clone();
-        let hash_var = CRHGadget::<Fr>::evaluate(&params_g, &vec![a_var, b_var]).unwrap();
-        hash_var.enforce_equal(&nodes[i]).unwrap();
-    }
-    nodes.last().unwrap().clone()
-}
-
-/*
 #[derive(Debug, Clone)]
 struct Step {
     a: usize,
@@ -221,14 +175,12 @@ fn hash_steps(
     }
     (vars[0].clone(), var_sums[0].clone())
 }
-*/
 
 pub fn test_tree(params: &PoseidonParameters<Fr>) {
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
 
-    /*
     let size = 1024*2;
     let mem_size_bits = 4;
     let mem_size = 1 << mem_size_bits;
@@ -265,5 +217,4 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
         mem_size_bits,
     );
     println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
-    */
 }
