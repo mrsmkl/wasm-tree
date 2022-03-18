@@ -1,4 +1,4 @@
-// Aggregating merkle loop circuits
+// Aggregating final circuits
 
 use ark_crypto_primitives::crh::poseidon::{ /* TwoToOneCRH, */ CRH};
 use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParametersVar};
