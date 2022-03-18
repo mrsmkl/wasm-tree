@@ -542,6 +542,7 @@ pub mod as_waksman;
 
 pub mod bucket;
 pub mod tree;
+pub mod truncate;
 
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
@@ -612,7 +613,7 @@ fn main3() {
 
 fn main() {
     let params = generate_hash();
-    crate::tree::test_tree(&params);
+    crate::truncate::test(&params);
 }
 
 fn main2() {
