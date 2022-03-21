@@ -543,6 +543,7 @@ pub mod as_waksman;
 pub mod bucket;
 pub mod tree;
 pub mod truncate;
+pub mod addmany;
 
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
@@ -611,12 +612,12 @@ fn main3() {
     crate::permutation::test_permutation();
 }
 
-fn main() {
+fn main2() {
     let params = generate_hash();
     crate::truncate::test(&params);
 }
 
-fn main2() {
+fn main() {
 
     let buffer = get_file("test.wasm".into());
 
@@ -653,6 +654,9 @@ fn main2() {
         }
 
         let trs = get_transitions(&c);
+
+        crate::addmany::test(&params, (c.add[0].before.clone(), c.add[0].after.clone()));
+        return;
 
         // memory::test_memory(&params, trs);
 
