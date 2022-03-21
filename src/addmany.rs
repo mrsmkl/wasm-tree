@@ -136,7 +136,7 @@ pub fn test(params: &PoseidonParameters<Fr>, step: (VM, VM)) {
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     let mut steps = vec![];
-    for i in 0..16 {
+    for i in 0..128 {
         steps.push(step.clone())
     }
     let circuit = AddManyCircuit {
