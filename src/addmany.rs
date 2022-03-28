@@ -31,8 +31,7 @@ impl InstructionCircuit for AddManyCircuit {
     }
 }
 
-fn generate_step(cs: ConstraintSystemRef<Fr>, params: PoseidonParameters<Fr>, params_g: &CRHParametersVar::<Fr>, before: VM, after: VM)
--> Result<FpVar<Fr>, SynthesisError> {
+fn generate_step(cs: ConstraintSystemRef<Fr>, params: PoseidonParameters<Fr>, params_g: &CRHParametersVar::<Fr>, before: VM, after: VM) -> Result<FpVar<Fr>, SynthesisError> {
     let elen = before.expr_stack.len();
 
     let pc_hash = hash_code(&params, &after.pc);
@@ -130,13 +129,14 @@ impl ConstraintSynthesizer<Fr> for AddManyCircuit {
 
 pub fn test(params: &PoseidonParameters<Fr>, step: (VM, VM)) {
     use ark_std::test_rng;
+    use std::time::Instant;
     use crate::InnerSNARK;
     use ark_crypto_primitives::CircuitSpecificSetupSNARK;
     use ark_crypto_primitives::SNARK;
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
     let mut steps = vec![];
-    for i in 0..128 {
+    for i in 0..256 {
         steps.push(step.clone())
     }
     let circuit = AddManyCircuit {
@@ -148,5 +148,8 @@ pub fn test(params: &PoseidonParameters<Fr>, step: (VM, VM)) {
     println!("Setting up circuit");
     let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
     println!("Testing prove");
+    let start = Instant::now();
     let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    let elapsed = start.elapsed();
+    println!("proving took {} ms", elapsed.as_millis());
 }

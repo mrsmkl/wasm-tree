@@ -544,6 +544,7 @@ pub mod bucket;
 pub mod tree;
 pub mod truncate;
 pub mod addmany;
+pub mod hash;
 
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
@@ -608,13 +609,13 @@ use crate::aggtransition::inner_to_outer;
 use crate::aggtransition::OuterSetup;
 use crate::aggtransition::HashCircuit;
 
-fn main3() {
+fn main1() {
     crate::permutation::test_permutation();
 }
 
 fn main2() {
     let params = generate_hash();
-    crate::truncate::test(&params);
+    crate::hash::test(&params);
 }
 
 fn main() {
