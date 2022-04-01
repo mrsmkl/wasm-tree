@@ -15,6 +15,91 @@ use ark_relations::r1cs::ConstraintSystem;
 
 use crate::{VM,Transition,hash_list,hash_code};
 use crate::InstructionCircuit;
+use ark_std::UniformRand;
+use ark_ff::Field;
+
+#[derive(Debug, Clone)]
+pub struct Params {
+    c: Vec<Fr>,
+    m: Vec<Vec<Fr>>,
+}
+
+fn generate_params() -> Params {
+    let mut test_rng = ark_std::test_rng();
+    let mut c = vec![];
+    for i in 0..1000 {
+        c.push(Fr::rand(&mut test_rng))
+    }
+    let mut m = vec![];
+    for i in 0..20 {
+        let mut a = vec![];
+        for j in 0..20 {
+            a.push(Fr::rand(&mut test_rng))
+        }
+        m.push(a)
+    }
+    Params { c, m }
+}
+
+fn sigma(a: Fr) -> Fr {
+    let a2 = a.square();
+    let a4 = a2.square();
+    a4*a
+}
+
+fn ark(v: Vec<Fr>, c: &Vec<Fr>, round: usize) -> Vec<Fr> {
+    let mut res = vec![];
+
+    for i in 0..v.len() {
+        res.push(v[i] + c[i + round]);
+    }
+    res
+}
+
+fn mix(v: Vec<Fr>, m: &Vec<Vec<Fr>>) -> Vec<Fr> {
+    let mut res = vec![];
+    for i in 0..v.len() {
+        let mut lc = Fr::from(0);
+        for j in 0..v.len() {
+            lc += m[i][j]*v[j];
+        }
+        res.push(lc)
+    }
+    res
+}
+
+
+fn poseidon(params: &Params, inputs: Vec<Fr>) -> Fr {
+    let n_rounds_p: Vec<usize> = vec![56, 57, 56, 60, 60, 63, 64, 63, 60, 66, 60, 65, 70, 60, 64, 68];
+    let t = inputs.len() + 1;
+    let nRoundsF = 8;
+    let nRoundsP = n_rounds_p[t - 2];
+
+    let mut mix_out = vec![];
+    for j in 0..t {
+        if j > 0 {
+            mix_out.push(inputs[j-1])
+        } else {
+            mix_out.push(Fr::from(0));
+        }
+    }
+    for i in 0..(nRoundsF + nRoundsP) {
+        let ark_out = ark(mix_out.clone(), &params.c, t*i);
+        let mut mix_in = vec![];
+        if i < nRoundsF/2 || i >= nRoundsP + nRoundsF/2 {
+            for j in 0..t {
+                mix_in.push(sigma(ark_out[j]))
+            }
+        } else {
+            mix_in.push(sigma(ark_out[0]));
+            for j in 1..t {
+                mix_in.push(ark_out[j])
+            }
+        }
+        mix_out = mix(mix_in, &params.m);
+    }
+    mix_out[0]
+}
 
 #[derive(Debug, Clone)]
 pub struct TestCircuit {
@@ -81,10 +166,14 @@ pub fn test(params: &PoseidonParameters<Fr>) {
         params: params.clone(),
         steps: 100,
     };
+    let params = generate_params();
+    println!("hash {}", poseidon(&params, vec![Fr::from(123), Fr::from(123), Fr::from(123)]))
     // circuit.generate_constraints(cs);
+    /*
     let mut rng = test_rng();
     println!("Setting up circuit");
     let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
     println!("Testing prove");
     let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    */
 }

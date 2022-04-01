@@ -613,12 +613,12 @@ fn main1() {
     crate::permutation::test_permutation();
 }
 
-fn main2() {
+fn main() {
     let params = generate_hash();
     crate::hash::test(&params);
 }
 
-fn main() {
+fn main3() {
 
     let buffer = get_file("test.wasm".into());
 
