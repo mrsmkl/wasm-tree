@@ -13,11 +13,13 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_relations::r1cs::ConstraintSystem;
 
-use crate::{VM,Transition,hash_list,hash_code};
-use crate::InstructionCircuit;
 use ark_std::UniformRand;
 use ark_ff::Field;
 use ark_r1cs_std::fields::FieldVar;
+use ark_r1cs_std::R1CSVar;
+
+use crate::{VM,Transition,hash_list,hash_code};
+use crate::InstructionCircuit;
 
 #[derive(Debug, Clone)]
 pub struct Params {
@@ -128,6 +130,38 @@ fn mix_gadget(v: Vec<FpVar<Fr>>, m: &Vec<Vec<Fr>>) -> Vec<FpVar<Fr>> {
     res
 }
 
+fn poseidon_gadget(params: &Params, inputs: Vec<FpVar<Fr>>) -> FpVar<Fr> {
+    let n_rounds_p: Vec<usize> = vec![56, 57, 56, 60, 60, 63, 64, 63, 60, 66, 60, 65, 70, 60, 64, 68];
+    let t = inputs.len() + 1;
+    let nRoundsF = 8;
+    let nRoundsP = n_rounds_p[t - 2];
+
+    let mut mix_out = vec![];
+    for j in 0..t {
+        if j > 0 {
+            mix_out.push(inputs[j-1].clone())
+        } else {
+            mix_out.push(FpVar::Constant(Fr::from(0)));
+        }
+    }
+    for i in 0..(nRoundsF + nRoundsP) {
+        let ark_out = ark_gadget(mix_out.clone(), &params.c, t*i);
+        let mut mix_in = vec![];
+        if i < nRoundsF/2 || i >= nRoundsP + nRoundsF/2 {
+            for j in 0..t {
+                mix_in.push(sigma_gadget(ark_out[j].clone()))
+            }
+        } else {
+            mix_in.push(sigma_gadget(ark_out[0].clone()));
+            for j in 1..t {
+                mix_in.push(ark_out[j].clone())
+            }
+        }
+        mix_out = mix_gadget(mix_in, &params.m);
+    }
+    mix_out[0].clone()
+}
+
 #[derive(Debug, Clone)]
 pub struct TestCircuit {
     pub steps: usize,
@@ -194,7 +228,17 @@ pub fn test(params: &PoseidonParameters<Fr>) {
         steps: 100,
     };
     let params = generate_params();
-    println!("hash {}", poseidon(&params, vec![Fr::from(123), Fr::from(123), Fr::from(123)]))
+    println!("hash {}", poseidon(&params, vec![Fr::from(123), Fr::from(123), Fr::from(123)]));
+    let v1 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let v2 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let v3 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let v4 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let v5 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let v6 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let v7 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let res = poseidon_gadget(&params, vec![v1, v2, v3, v4, v5, v6]);
+    println!("gadget {}", res.value().unwrap());
+    println!("constraints {}", cs.num_constraints());
     // circuit.generate_constraints(cs);
     /*
     let mut rng = test_rng();
