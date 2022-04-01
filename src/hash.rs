@@ -17,6 +17,7 @@ use crate::{VM,Transition,hash_list,hash_code};
 use crate::InstructionCircuit;
 use ark_std::UniformRand;
 use ark_ff::Field;
+use ark_r1cs_std::fields::FieldVar;
 
 #[derive(Debug, Clone)]
 pub struct Params {
@@ -68,7 +69,6 @@ fn mix(v: Vec<Fr>, m: &Vec<Vec<Fr>>) -> Vec<Fr> {
     res
 }
 
-
 fn poseidon(params: &Params, inputs: Vec<Fr>) -> Fr {
     let n_rounds_p: Vec<usize> = vec![56, 57, 56, 60, 60, 63, 64, 63, 60, 66, 60, 65, 70, 60, 64, 68];
     let t = inputs.len() + 1;
@@ -99,6 +99,33 @@ fn poseidon(params: &Params, inputs: Vec<Fr>) -> Fr {
         mix_out = mix(mix_in, &params.m);
     }
     mix_out[0]
+}
+
+fn sigma_gadget(a: FpVar<Fr>) -> FpVar<Fr> {
+    let a2 = a.square().unwrap();
+    let a4 = a2.square().unwrap();
+    a4*a
+}
+
+fn ark_gadget(v: Vec<FpVar<Fr>>, c: &Vec<Fr>, round: usize) -> Vec<FpVar<Fr>> {
+    let mut res = vec![];
+
+    for i in 0..v.len() {
+        res.push(v[i].clone() + FpVar::Constant(c[i + round]));
+    }
+    res
+}
+
+fn mix_gadget(v: Vec<FpVar<Fr>>, m: &Vec<Vec<Fr>>) -> Vec<FpVar<Fr>> {
+    let mut res = vec![];
+    for i in 0..v.len() {
+        let mut lc = FpVar::Constant(m[i][0])*v[0].clone();
+        for j in 1..v.len() {
+            lc += FpVar::Constant(m[i][j])*v[j].clone();
+        }
+        res.push(lc)
+    }
+    res
 }
 
 #[derive(Debug, Clone)]
