@@ -71,7 +71,7 @@ fn mix(v: Vec<Fr>, m: &Vec<Vec<Fr>>) -> Vec<Fr> {
     res
 }
 
-fn poseidon(params: &Params, inputs: Vec<Fr>) -> Fr {
+pub fn poseidon(params: &Params, inputs: Vec<Fr>) -> Fr {
     let n_rounds_p: Vec<usize> = vec![56, 57, 56, 60, 60, 63, 64, 63, 60, 66, 60, 65, 70, 60, 64, 68];
     let t = inputs.len() + 1;
     let nRoundsF = 8;
@@ -130,7 +130,7 @@ fn mix_gadget(v: Vec<FpVar<Fr>>, m: &Vec<Vec<Fr>>) -> Vec<FpVar<Fr>> {
     res
 }
 
-fn poseidon_gadget(params: &Params, inputs: Vec<FpVar<Fr>>) -> FpVar<Fr> {
+pub fn poseidon_gadget(params: &Params, inputs: Vec<FpVar<Fr>>) -> FpVar<Fr> {
     let n_rounds_p: Vec<usize> = vec![56, 57, 56, 60, 60, 63, 64, 63, 60, 66, 60, 65, 70, 60, 64, 68];
     let t = inputs.len() + 1;
     let nRoundsF = 8;

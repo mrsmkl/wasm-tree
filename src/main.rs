@@ -546,6 +546,8 @@ pub mod truncate;
 pub mod addmany;
 pub mod hash;
 
+pub mod vm;
+
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
