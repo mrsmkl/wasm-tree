@@ -27,7 +27,7 @@ pub struct Params {
     m: Vec<Vec<Fr>>,
 }
 
-fn generate_params() -> Params {
+pub fn generate_params() -> Params {
     let mut test_rng = ark_std::test_rng();
     let mut c = vec![];
     for i in 0..1000 {

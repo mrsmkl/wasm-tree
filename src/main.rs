@@ -611,11 +611,11 @@ use crate::aggtransition::inner_to_outer;
 use crate::aggtransition::OuterSetup;
 use crate::aggtransition::HashCircuit;
 
-fn main1() {
-    crate::permutation::test_permutation();
+fn main() {
+    crate::vm::test();
 }
 
-fn main() {
+fn main2() {
     let params = generate_hash();
     crate::hash::test(&params);
 }
