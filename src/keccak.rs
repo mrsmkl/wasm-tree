@@ -54,6 +54,22 @@ fn xor_bool(a: &[Boolean<Fr>], b: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
     out
 }
 
+fn not_bool(a: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
+    let mut out = vec![];
+    for i in 0..a.len() {
+        out.push(a[i].clone().not())
+    }
+    out
+}
+
+fn and_bool(a: &[Boolean<Fr>], b: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
+    let mut out = vec![];
+    for i in 0..a.len() {
+        out.push(a[i].clone().and(&b[i]).unwrap())
+    }
+    out
+}
+
 fn xor5_bool(a: &[Boolean<Fr>], b: &[Boolean<Fr>], c: &[Boolean<Fr>], d: &[Boolean<Fr>], e: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
     let mut out = vec![];
     for i in 0..a.len() {
@@ -182,3 +198,52 @@ fn rho_pi(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     }
     out
 }
+
+fn step_chi(a: &[Boolean<Fr>], b: &[Boolean<Fr>], c: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
+    let b_xor = not_bool(b);
+    let bc = and_bool(&b, c);
+    xor_bool(a, &bc)
+}
+
+fn chi(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let mut r = vec![vec![]; 25];
+
+    r[0] = step_chi(&inp[0*64..1*64], &inp[1*64..2*64], &inp[2*64..3*64]);
+    r[1] = step_chi(&inp[1*64..2*64], &inp[2*64..3*64], &inp[3*64..4*64]);
+    r[2] = step_chi(&inp[2*64..3*64], &inp[3*64..4*64], &inp[4*64..5*64]);
+    r[3] = step_chi(&inp[3*64..4*64], &inp[4*64..5*64], &inp[0*64..1*64]);
+    r[4] = step_chi(&inp[4*64..5*64], &inp[0*64..1*64], &inp[1*64..2*64]);
+
+    r[5] = step_chi(&inp[5*64..6*64], &inp[6*64..7*64], &inp[7*64..8*64]);
+    r[6] = step_chi(&inp[6*64..7*64], &inp[7*64..8*64], &inp[8*64..9*64]);
+    r[7] = step_chi(&inp[7*64..8*64], &inp[8*64..9*64], &inp[9*64..10*64]);
+    r[8] = step_chi(&inp[8*64..9*64], &inp[9*64..10*64], &inp[5*64..6*64]);
+    r[9] = step_chi(&inp[9*64..10*64], &inp[5*64..6*64], &inp[6*64..7*64]);
+
+    r[10] = step_chi(&inp[10*64..11*64], &inp[11*64..12*64], &inp[12*64..13*64]);
+    r[11] = step_chi(&inp[11*64..12*64], &inp[12*64..13*64], &inp[13*64..14*64]);
+    r[12] = step_chi(&inp[12*64..13*64], &inp[13*64..14*64], &inp[14*64..15*64]);
+    r[13] = step_chi(&inp[13*64..14*64], &inp[14*64..15*64], &inp[10*64..11*64]);
+    r[14] = step_chi(&inp[14*64..15*64], &inp[10*64..11*64], &inp[11*64..12*64]);
+
+    r[15] = step_chi(&inp[15*64..16*64], &inp[16*64..17*64], &inp[17*64..18*64]);
+    r[16] = step_chi(&inp[16*64..17*64], &inp[17*64..18*64], &inp[18*64..19*64]);
+    r[17] = step_chi(&inp[17*64..18*64], &inp[18*64..19*64], &inp[19*64..20*64]);
+    r[18] = step_chi(&inp[18*64..19*64], &inp[19*64..20*64], &inp[15*64..16*64]);
+    r[19] = step_chi(&inp[19*64..20*64], &inp[15*64..16*64], &inp[16*64..17*64]);
+
+    r[20] = step_chi(&inp[20*64..21*64], &inp[21*64..22*64], &inp[22*64..23*64]);
+    r[21] = step_chi(&inp[21*64..22*64], &inp[22*64..23*64], &inp[23*64..24*64]);
+    r[22] = step_chi(&inp[22*64..23*64], &inp[23*64..24*64], &inp[24*64..25*64]);
+    r[23] = step_chi(&inp[23*64..24*64], &inp[24*64..25*64], &inp[20*64..21*64]);
+    r[24] = step_chi(&inp[24*64..25*64], &inp[20*64..21*64], &inp[21*64..22*64]);
+
+    let mut out = vec![];
+    for i in 0..25 {
+        for j in 0..64 {
+            out.push(r[i][j].clone())
+        }
+    }
+    out
+}
+
