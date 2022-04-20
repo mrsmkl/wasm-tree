@@ -38,7 +38,7 @@ fn shl_bool(a: &[Boolean<Fr>], r: usize) -> Vec<Boolean<Fr>> {
     out
 }
 
-fn or_bool(a: Vec<Boolean<Fr>>, b: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+fn or_bool(a: &[Boolean<Fr>], b: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
     let mut out = vec![];
     for i in 0..a.len() {
         out.push(a[i].clone().or(&b[i]).unwrap())
@@ -84,7 +84,7 @@ fn perm_d(a: &Vec<Boolean<Fr>>, b: &Vec<Boolean<Fr>>, shl: usize, shr: usize) ->
     let aux0 = shr_bool(a, shr);
     let aux1 = shl_bool(a, shl);
 
-    let aux2 = or_bool(aux0, aux1);
+    let aux2 = or_bool(&aux0, &aux1);
     xor_bool(&b, &aux2)
 }
 
@@ -151,7 +151,7 @@ fn step_rho_pi(a: &[Boolean<Fr>], shl: usize, shr: usize) -> Vec<Boolean<Fr>> {
     let aux0 = shr_bool(a, shr);
     let aux1 = shl_bool(a, shl);
 
-    or_bool(aux0, aux1)
+    or_bool(&aux0, &aux1)
 
 }
 
@@ -262,7 +262,7 @@ fn iota(inp: Vec<Boolean<Fr>>, r: usize) -> Vec<Boolean<Fr>> {
 
     let mut rc = vec![];
     for i in 0..64 {
-        rc.push(Boolean::constant((rc_arr[r] >> i) == 1));
+        rc.push(Boolean::constant(((rc_arr[r] >> i) & 1) == 1));
     }
 
     let mut res = xor_bool(&inp[0..64], &rc);
@@ -272,3 +272,40 @@ fn iota(inp: Vec<Boolean<Fr>>, r: usize) -> Vec<Boolean<Fr>> {
     res
 }
 
+fn pad(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let blockSize = 136*8;
+
+    let mut out2 = vec![];
+
+    for el in inp.clone() {
+        out2.push(el)
+    }
+
+    let domain = 0x01;
+    for i in 0..8 {
+        out2.push(Boolean::constant(((domain >> i) & 1) == 1))
+    }
+
+    for i in 8+inp.len() .. blockSize {
+        out2.push(Boolean::FALSE)
+    }
+
+    let mut last_mask = vec![];
+    for i in 0..8 {
+        last_mask.push(Boolean::constant(((0x80 >> i) & 1) == 1));
+    }
+
+    let last = or_bool(&last_mask, &out2[blockSize-8 .. blockSize]);
+
+    let mut out = vec![];
+
+    for i in 0..blockSize-8 {
+        out.push(out2[i].clone())
+    }
+
+    for i in 0..8 {
+        out.push(last[i].clone())
+    }
+
+    out
+}
