@@ -325,3 +325,20 @@ fn keccakf(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     res
 }
 
+fn absorb(block: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let blockSizeBytes = 136;
+
+    let mut inp = xor_bool(&block, &s[0..8*blockSizeBytes]);
+
+    for i in blockSizeBytes*8 .. 25*64 {
+        inp.push(s[i].clone())
+    }
+
+    keccakf(inp)
+}
+
+fn finalize(inp: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let block = pad(inp);
+    absorb(block, s)
+}
+
