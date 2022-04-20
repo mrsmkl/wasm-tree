@@ -548,6 +548,8 @@ pub mod hash;
 
 pub mod vm;
 
+pub mod keccak;
+
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
     let cs_sys = ConstraintSystem::<Fr>::new();
