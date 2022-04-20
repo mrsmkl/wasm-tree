@@ -88,7 +88,7 @@ fn perm_d(a: &Vec<Boolean<Fr>>, b: &Vec<Boolean<Fr>>, shl: usize, shr: usize) ->
     xor_bool(&b, &aux2)
 }
 
-fn perm_theta(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+fn theta(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     let mut r = vec![vec![]; 25];
 
     let c0 = xor5_bool(&inp[0..64], &inp[5*64..6*64], &inp[10*64..11*64], &inp[15*64..16*64], &inp[20*64..21*64]);
@@ -309,3 +309,19 @@ fn pad(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
 
     out
 }
+
+fn keccacf_round(inp: Vec<Boolean<Fr>>, r: usize) -> Vec<Boolean<Fr>> {
+    let r1 = theta(inp);
+    let r2 = rho_pi(r1);
+    let r3 = chi(r2);
+    iota(r3, r)
+}
+
+fn keccakf(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let mut res = inp;
+    for i in 0..24 {
+        res = keccacf_round(res, i);
+    }
+    res
+}
+
