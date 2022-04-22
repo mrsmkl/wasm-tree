@@ -21,11 +21,12 @@ use ark_r1cs_std::boolean::Boolean;
 
 use crate::{VM,Transition,hash_list,hash_code};
 use crate::InstructionCircuit;
+use ark_r1cs_std::boolean::AllocatedBool;
 
 fn shr_bool(a: &[Boolean<Fr>], r: usize) -> Vec<Boolean<Fr>> {
     let mut out = vec![];
     for i in 0..a.len() {
-        out.push(if i+r >= 64 { Boolean::FALSE } else { a[i-r].clone() })
+        out.push(if i+r >= 64 { Boolean::FALSE } else { a[i+r].clone() })
     }
     out
 }
@@ -91,6 +92,8 @@ fn perm_d(a: &Vec<Boolean<Fr>>, b: &Vec<Boolean<Fr>>, shl: usize, shr: usize) ->
 fn theta(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     let mut r = vec![vec![]; 25];
 
+    // println!("here {}", inp.len());
+
     let c0 = xor5_bool(&inp[0..64], &inp[5*64..6*64], &inp[10*64..11*64], &inp[15*64..16*64], &inp[20*64..21*64]);
     let c1 = xor5_bool(&inp[64..2*64], &inp[6*64..7*64], &inp[11*64..12*64], &inp[16*64..17*64], &inp[21*64..22*64]);
     let c2 = xor5_bool(&inp[2*64..3*64], &inp[7*64..8*64], &inp[12*64..13*64], &inp[17*64..18*64], &inp[22*64..23*64]);
@@ -143,6 +146,7 @@ fn theta(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
             out.push(r[i][j].clone())
         }
     }
+    print_bytes(&out);
     out
 }
 
@@ -196,12 +200,13 @@ fn rho_pi(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
             out.push(r[i][j].clone())
         }
     }
+    print_bytes(&out);
     out
 }
 
 fn step_chi(a: &[Boolean<Fr>], b: &[Boolean<Fr>], c: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
     let b_xor = not_bool(b);
-    let bc = and_bool(&b, c);
+    let bc = and_bool(&b_xor, c);
     xor_bool(a, &bc)
 }
 
@@ -244,6 +249,7 @@ fn chi(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
             out.push(r[i][j].clone())
         }
     }
+    print_bytes(&out);
     out
 }
 
@@ -266,9 +272,10 @@ fn iota(inp: Vec<Boolean<Fr>>, r: usize) -> Vec<Boolean<Fr>> {
     }
 
     let mut res = xor_bool(&inp[0..64], &rc);
-    for i in 64..25*54 {
+    for i in 64..25*64 {
         res.push(inp[i].clone())
     }
+    // println!("iota {}", res.len());
     res
 }
 
@@ -329,10 +336,15 @@ fn absorb(block: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     let blockSizeBytes = 136;
 
     let mut inp = xor_bool(&block, &s[0..8*blockSizeBytes]);
+    // println!("first {}, block {}", inp.len(), block.len());
 
     for i in blockSizeBytes*8 .. 25*64 {
         inp.push(s[i].clone())
     }
+    // println!("first {}, block {}", inp.len(), block.len());
+
+    print_bytes(&inp);
+
 
     keccakf(inp)
 }
@@ -342,3 +354,91 @@ fn finalize(inp: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     absorb(block, s)
 }
 
+#[derive(Debug, Clone)]
+pub struct TestCircuit {
+    pub steps: usize,
+}
+
+impl ConstraintSynthesizer<Fr> for TestCircuit {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
+        for i in 0..self.steps {
+            let mut inp = vec![];
+            for i in 0..64*8 {
+                let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
+                inp.push(bool_var)
+            }
+            let mut init = vec![];
+            for i in 0..1600 {
+                let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
+                init.push(bool_var)
+            }
+            finalize(inp, init);
+        }
+        // println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
+        println!("num constraints {}", cs.num_constraints());
+        Ok(())
+    }
+}
+
+fn reverse<T: Clone>(a: &[T]) -> Vec<T> {
+    let mut res : Vec<T> = vec![];
+    for el in a.iter().rev() {
+        res.push(el.clone())
+    }
+    res
+}
+
+fn print_bytes(v: &[Boolean<Fr>]) {
+    let mut res = "".to_string();
+    for i in 0..200 {
+        let mut h1 = 0;
+        for j in 0..4 {
+            let x = if v[i*8+3-j].value().unwrap() { 1 } else { 0 };
+            h1 = 2*h1 + x;
+        }
+        let mut h2 = 0;
+        for j in 0..4 {
+            let x = if v[i*8+4+3-j].value().unwrap() { 1 } else { 0 };
+            h2 = 2*h2 + x;
+        }
+        res = format!("{}{:x}{:x}", res, h2, h1)
+    }
+    println!("{}", res)
+}
+
+pub fn test() {
+    use ark_std::test_rng;
+    use crate::InnerSNARK;
+    use ark_crypto_primitives::CircuitSpecificSetupSNARK;
+    use ark_crypto_primitives::SNARK;
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+
+    let mut inp = vec![];
+    for i in 0..16*8 {
+        let b = (i % 8) == 0;
+        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(b)).unwrap());
+        inp.push(bool_var)
+    }
+    let mut init = vec![];
+    for i in 0..1600 {
+        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
+        init.push(bool_var)
+    }
+    let bits = finalize(inp, init);
+    print_bytes(&bits);
+    // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
+    // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
+    println!("num constraints {}", cs.num_constraints());
+
+    /*
+    let circuit = TestCircuit {
+        steps: 100,
+    };
+    let mut rng = test_rng();
+    println!("Setting up circuit");
+    let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
+    println!("Testing prove");
+    let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    */
+}

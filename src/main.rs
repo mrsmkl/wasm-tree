@@ -614,7 +614,7 @@ use crate::aggtransition::OuterSetup;
 use crate::aggtransition::HashCircuit;
 
 fn main() {
-    crate::vm::test();
+    crate::keccak::test();
 }
 
 fn main2() {
