@@ -389,6 +389,7 @@ fn reverse<T: Clone>(a: &[T]) -> Vec<T> {
 }
 
 fn print_bytes(v: &[Boolean<Fr>]) {
+    /*
     let mut res = "".to_string();
     for i in 0..200 {
         let mut h1 = 0;
@@ -404,6 +405,7 @@ fn print_bytes(v: &[Boolean<Fr>]) {
         res = format!("{}{:x}{:x}", res, h2, h1)
     }
     println!("{}", res)
+    */
 }
 
 pub fn test() {
@@ -413,6 +415,7 @@ pub fn test() {
     use ark_crypto_primitives::SNARK;
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
+    /*
 
     let mut inp = vec![];
     for i in 0..16*8 {
@@ -430,15 +433,14 @@ pub fn test() {
     // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
     // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
     println!("num constraints {}", cs.num_constraints());
+    */
 
-    /*
     let circuit = TestCircuit {
-        steps: 100,
+        steps: 181,
     };
     let mut rng = test_rng();
     println!("Setting up circuit");
     let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
     println!("Testing prove");
     let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
-    */
 }
