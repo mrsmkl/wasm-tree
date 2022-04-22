@@ -317,6 +317,55 @@ fn pad(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     out
 }
 
+/*
+A:0, b:0: true
+A:1, b:0: true
+A:0, b:1: false
+A:1, b:1: true
+*/
+fn correct_sel(sel: &Vec<Boolean<Fr>>) {
+    // Sequence of booleans becomes false at some point?
+    for i in 0..sel.len()-1 {
+        sel[i].or(&sel[i+1].not()).unwrap().enforce_equal(&Boolean::TRUE).unwrap();
+    }
+}
+
+// select bytes
+fn pad_var(inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+
+    correct_sel(&sel);
+
+    let blockSize = 136*8;
+
+    let mut out2 = vec![];
+
+    for i in 0..blockSize {
+        out2.push(sel[i].and(&inp[i*8]).unwrap().or(&sel[i-1].and(&sel[i].not()).unwrap()).unwrap());
+        for j in 1..8 {
+            out2.push(sel[i].and(&inp[i*8+j]).unwrap())
+        }
+    }
+
+    let mut last_mask = vec![];
+    for i in 0..8 {
+        last_mask.push(Boolean::constant(((0x80 >> i) & 1) == 1));
+    }
+
+    let last = or_bool(&last_mask, &out2[blockSize-8 .. blockSize]);
+
+    let mut out = vec![];
+
+    for i in 0..blockSize-8 {
+        out.push(out2[i].clone())
+    }
+
+    for i in 0..8 {
+        out.push(last[i].clone())
+    }
+
+    out
+}
+
 fn keccacf_round(inp: Vec<Boolean<Fr>>, r: usize) -> Vec<Boolean<Fr>> {
     let r1 = theta(inp);
     let r2 = rho_pi(r1);
@@ -415,7 +464,6 @@ pub fn test() {
     use ark_crypto_primitives::SNARK;
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
-    /*
 
     let mut inp = vec![];
     for i in 0..16*8 {
@@ -433,8 +481,8 @@ pub fn test() {
     // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
     // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
     println!("num constraints {}", cs.num_constraints());
-    */
 
+    /*
     let circuit = TestCircuit {
         steps: 181,
     };
@@ -443,4 +491,5 @@ pub fn test() {
     let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
     println!("Testing prove");
     let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    */
 }
