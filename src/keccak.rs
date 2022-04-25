@@ -339,8 +339,12 @@ fn pad_var(inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
 
     let mut out2 = vec![];
 
-    for i in 0..blockSize {
-        out2.push(sel[i].and(&inp[i*8]).unwrap().or(&sel[i-1].and(&sel[i].not()).unwrap()).unwrap());
+    for i in 0..136 {
+        if i == 0 {
+            out2.push(sel[i].and(&inp[i*8]).unwrap().or(&sel[i].not()).unwrap());
+        } else {
+            out2.push(sel[i].and(&inp[i*8]).unwrap().or(&sel[i-1].and(&sel[i].not()).unwrap()).unwrap());
+        }
         for j in 1..8 {
             out2.push(sel[i].and(&inp[i*8+j]).unwrap())
         }
@@ -403,6 +407,16 @@ fn finalize(inp: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     absorb(block, s)
 }
 
+fn finalize_var(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let block = pad_var(inp, sel);
+    let mut init = vec![];
+    for i in 0..1600 {
+        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
+        init.push(bool_var)
+    }
+    absorb(block, init)
+}
+
 #[derive(Debug, Clone)]
 pub struct TestCircuit {
     pub steps: usize,
@@ -412,7 +426,7 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         for i in 0..self.steps {
             let mut inp = vec![];
-            for i in 0..64*8 {
+            for i in 0..136*8 {
                 let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
                 inp.push(bool_var)
             }
@@ -438,7 +452,6 @@ fn reverse<T: Clone>(a: &[T]) -> Vec<T> {
 }
 
 fn print_bytes(v: &[Boolean<Fr>]) {
-    /*
     let mut res = "".to_string();
     for i in 0..200 {
         let mut h1 = 0;
@@ -454,7 +467,6 @@ fn print_bytes(v: &[Boolean<Fr>]) {
         res = format!("{}{:x}{:x}", res, h2, h1)
     }
     println!("{}", res)
-    */
 }
 
 pub fn test() {
@@ -466,17 +478,18 @@ pub fn test() {
     let cs = ConstraintSystemRef::new(cs_sys);
 
     let mut inp = vec![];
-    for i in 0..16*8 {
+    for i in 0..136*8 {
         let b = (i % 8) == 0;
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(b)).unwrap());
         inp.push(bool_var)
     }
-    let mut init = vec![];
-    for i in 0..1600 {
-        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
-        init.push(bool_var)
+    let mut sel = vec![];
+    for i in 0..136 {
+        let res = if i < 135 { true } else { false };
+        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(res)).unwrap());
+        sel.push(bool_var)
     }
-    let bits = finalize(inp, init);
+    let bits = finalize_var(cs.clone(), inp, sel);
     print_bytes(&bits);
     // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
     // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
