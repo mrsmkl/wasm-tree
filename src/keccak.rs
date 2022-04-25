@@ -429,6 +429,27 @@ fn finalize_double(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<
     absorb(&block2, s)
 }
 
+fn finalize_blocks(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>, blocks: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    correct_sel(&blocks);
+    let mut init = vec![];
+    for i in 0..1600 {
+        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
+        init.push(bool_var)
+    }
+    let mut s = init.clone();
+    
+    for i in 0..blocks.len() - 1 {
+        let aux = absorb(&inp[i*136*8 .. (i+1)*136*8], s);
+        s = vec![];
+        // select block
+        for j in 0..1600 {
+            s.push(blocks[i].select(&aux[j], &init[j]).unwrap());
+        }
+    }
+    let last_block = pad_var(&inp[136*8*(blocks.len()-1)..136*8*blocks.len()], &sel);
+    absorb(&last_block, s)
+}
+
 #[derive(Debug, Clone)]
 pub struct TestCircuit {
     pub steps: usize,
@@ -490,18 +511,22 @@ pub fn test() {
     let cs = ConstraintSystemRef::new(cs_sys);
 
     let mut inp = vec![];
-    for i in 0..136*8*2 {
+    for i in 0..136*8*3 {
         let b = (i % 8) == 0;
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(b)).unwrap());
         inp.push(bool_var)
     }
     let mut sel = vec![];
     for i in 0..136 {
-        let res = if i < 0 { true } else { false };
+        let res = if i < 10 { true } else { false };
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(res)).unwrap());
         sel.push(bool_var)
     }
-    let bits = finalize_double(cs.clone(), inp, sel);
+    let mut blocks = vec![];
+    blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(true)).unwrap()));
+    blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(true)).unwrap()));
+    blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(true)).unwrap()));
+    let bits = finalize_blocks(cs.clone(), inp, sel, blocks);
     print_bytes(&bits);
     // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
     // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
