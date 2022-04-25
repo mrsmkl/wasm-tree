@@ -146,7 +146,7 @@ fn theta(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
             out.push(r[i][j].clone())
         }
     }
-    print_bytes(&out);
+    // print_bytes(&out);
     out
 }
 
@@ -200,7 +200,7 @@ fn rho_pi(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
             out.push(r[i][j].clone())
         }
     }
-    print_bytes(&out);
+    // print_bytes(&out);
     out
 }
 
@@ -249,7 +249,7 @@ fn chi(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
             out.push(r[i][j].clone())
         }
     }
-    print_bytes(&out);
+    // print_bytes(&out);
     out
 }
 
@@ -323,7 +323,7 @@ A:1, b:0: true
 A:0, b:1: false
 A:1, b:1: true
 */
-fn correct_sel(sel: &Vec<Boolean<Fr>>) {
+fn correct_sel(sel: &[Boolean<Fr>]) {
     // Sequence of booleans becomes false at some point?
     for i in 0..sel.len()-1 {
         sel[i].or(&sel[i+1].not()).unwrap().enforce_equal(&Boolean::TRUE).unwrap();
@@ -331,9 +331,9 @@ fn correct_sel(sel: &Vec<Boolean<Fr>>) {
 }
 
 // select bytes
-fn pad_var(inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+fn pad_var(inp: &[Boolean<Fr>], sel: &[Boolean<Fr>]) -> Vec<Boolean<Fr>> {
 
-    correct_sel(&sel);
+    correct_sel(sel);
 
     let blockSize = 136*8;
 
@@ -385,7 +385,7 @@ fn keccakf(inp: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     res
 }
 
-fn absorb(block: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+fn absorb(block: &[Boolean<Fr>], s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     let blockSizeBytes = 136;
 
     let mut inp = xor_bool(&block, &s[0..8*blockSizeBytes]);
@@ -404,17 +404,29 @@ fn absorb(block: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
 
 fn finalize(inp: Vec<Boolean<Fr>>, s: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
     let block = pad(inp);
-    absorb(block, s)
+    absorb(&block, s)
 }
 
 fn finalize_var(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
-    let block = pad_var(inp, sel);
+    let block = pad_var(&inp, &sel);
     let mut init = vec![];
     for i in 0..1600 {
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
         init.push(bool_var)
     }
-    absorb(block, init)
+    absorb(&block, init)
+}
+
+fn finalize_double(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
+    let block1 = &inp[0..136*8];
+    let block2 = pad_var(&inp[136*8..136*8*2], &sel);
+    let mut init = vec![];
+    for i in 0..1600 {
+        let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
+        init.push(bool_var)
+    }
+    let s = absorb(block1, init);
+    absorb(&block2, s)
 }
 
 #[derive(Debug, Clone)]
@@ -478,18 +490,18 @@ pub fn test() {
     let cs = ConstraintSystemRef::new(cs_sys);
 
     let mut inp = vec![];
-    for i in 0..136*8 {
+    for i in 0..136*8*2 {
         let b = (i % 8) == 0;
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(b)).unwrap());
         inp.push(bool_var)
     }
     let mut sel = vec![];
     for i in 0..136 {
-        let res = if i < 135 { true } else { false };
+        let res = if i < 0 { true } else { false };
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(res)).unwrap());
         sel.push(bool_var)
     }
-    let bits = finalize_var(cs.clone(), inp, sel);
+    let bits = finalize_double(cs.clone(), inp, sel);
     print_bytes(&bits);
     // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
     // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
