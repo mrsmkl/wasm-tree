@@ -20,6 +20,8 @@ use ark_r1cs_std::R1CSVar;
 
 use crate::{VM,Transition,hash_list,hash_code};
 use crate::InstructionCircuit;
+use ark_r1cs_std::boolean::AllocatedBool;
+use ark_r1cs_std::boolean::Boolean;
 
 #[derive(Debug, Clone)]
 pub struct Params {
@@ -214,6 +216,33 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
         println!("num constraints {}", cs.num_constraints());
         Ok(())
     }
+}
+
+// gadget for variable length merkle tree
+// returns the root and index of first elem
+fn make_path(cs: ConstraintSystemRef<Fr>, num: usize, params : &Params, elem: FpVar<Fr>, path: &[Fr], selectors: &[bool]) -> (FpVar<Fr>, FpVar<Fr>) {
+    let mut acc = elem.clone();
+    let mut idx = FpVar::constant(Fr::from(0));
+    let mut pow2 = FpVar::constant(Fr::from(1));
+    for i in 0..num {
+        let elem = if path.len() > i { path[i] } else { Fr::from(0) };
+        let sel = if selectors.len() > i { selectors[i] } else { false };
+        let skip = selectors.len() <= i;
+        let sel_bool = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(sel)).unwrap());
+        let skip_bool = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(skip)).unwrap()); // these might need a correctness check (perhaps not)
+        let new_idx = idx.clone() + sel_bool.select(&pow2, &FpVar::constant(Fr::from(0))).unwrap();
+        let new_pow2 = pow2.clone() * pow2.clone();
+
+        let elem_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(elem.clone())).unwrap());
+        let leaf1 = sel_bool.select(&elem_var, &acc).unwrap();
+        let leaf2 = sel_bool.select(&acc, &elem_var).unwrap();
+        let new_acc = poseidon_gadget(&params, vec![leaf1, leaf2]);
+
+        pow2 = skip_bool.select(&pow2, &new_pow2).unwrap();
+        acc = skip_bool.select(&acc, &new_acc).unwrap();
+        idx = skip_bool.select(&idx, &new_idx).unwrap();
+    }
+    (acc, idx)
 }
 
 pub fn test(params: &PoseidonParameters<Fr>) {
