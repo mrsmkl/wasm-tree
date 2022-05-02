@@ -328,6 +328,21 @@ fn correct_sel(sel: &[Boolean<Fr>]) {
     for i in 0..sel.len()-1 {
         sel[i].or(&sel[i+1].not()).unwrap().enforce_equal(&Boolean::TRUE).unwrap();
     }
+    sel[sel.len()-1].enforce_equal(&Boolean::FALSE);
+}
+
+/*
+A:0, b:0: true
+A:1, b:0: false
+A:0, b:1: true
+A:1, b:1: true
+*/
+fn correct_sel_inv(sel: &[Boolean<Fr>]) {
+    // Sequence of booleans becomes false at some point?
+    for i in 0..sel.len()-1 {
+        sel[i+1].or(&sel[i].not()).unwrap().enforce_equal(&Boolean::TRUE).unwrap();
+    }
+    sel[sel.len()-1].enforce_equal(&Boolean::TRUE);
 }
 
 // select bytes
@@ -429,8 +444,24 @@ fn finalize_double(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<
     absorb(&block2, s)
 }
 
+fn count(sel: &[Boolean<Fr>]) -> FpVar<Fr> {
+    let mut acc = FpVar::Constant(Fr::from(0));
+    for el in sel.iter() {
+        let v : FpVar<Fr> = From::from(el.clone());
+        acc = acc + v;
+    }
+    acc
+}
+
+fn count_bytes(sel: &Vec<Boolean<Fr>>, blocks: &Vec<Boolean<Fr>>) -> FpVar<Fr> {
+    let a = count(sel);
+    let b = count(&blocks[0..blocks.len()-1]);
+    let block_size = FpVar::constant(Fr::from(136));
+    a + b * block_size
+}
+
 fn finalize_blocks(cs: ConstraintSystemRef<Fr>, inp: Vec<Boolean<Fr>>, sel: Vec<Boolean<Fr>>, blocks: Vec<Boolean<Fr>>) -> Vec<Boolean<Fr>> {
-    correct_sel(&blocks);
+    correct_sel_inv(&blocks);
     let mut init = vec![];
     for i in 0..1600 {
         let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap());
@@ -523,14 +554,16 @@ pub fn test() {
         sel.push(bool_var)
     }
     let mut blocks = vec![];
+    blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(false)).unwrap()));
     blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(true)).unwrap()));
     blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(true)).unwrap()));
-    blocks.push(Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(true)).unwrap()));
+    let res = count_bytes(&sel, &blocks);
     let bits = finalize_blocks(cs.clone(), inp, sel, blocks);
     print_bytes(&bits);
+
     // let res = Boolean::le_bits_to_fp_var(&reverse(&bits[0..256])).unwrap();
-    // println!("num constraints {}, res {}", cs.num_constraints(), res.value().unwrap());
-    println!("num constraints {}", cs.num_constraints());
+    println!("num constraints {} satified {}, res {}", cs.is_satisfied().unwrap(), cs.num_constraints(), res.value().unwrap());
+    // println!("num constraints {} {}", cs.num_constraints(), cs.is_satisfied().unwrap());
 
     /*
     let circuit = TestCircuit {
