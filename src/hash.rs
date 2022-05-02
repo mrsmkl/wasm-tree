@@ -228,7 +228,7 @@ fn make_path(cs: ConstraintSystemRef<Fr>, num: usize, params : &Params, elem: Fp
         let sel = if selectors.len() > i { selectors[i] } else { false };
         let skip = selectors.len() <= i;
         let sel_bool = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(sel)).unwrap());
-        let skip_bool = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(skip)).unwrap());
+        let skip_bool = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(skip)).unwrap()); // these might need a correctness check (perhaps not)
         let new_idx = idx.clone()+idx.clone() + FpVar::from(sel_bool.clone());
         let elem_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(elem.clone())).unwrap());
         let leaf1 = sel_bool.select(&elem_var, &acc).unwrap();
