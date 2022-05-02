@@ -218,10 +218,18 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Proof {
+    pub path: Vec<Fr>,
+    pub selectors: Vec<bool>,
+}
+
 // gadget for variable length merkle tree
 // returns the root and index of first elem
-fn make_path(cs: ConstraintSystemRef<Fr>, num: usize, params : &Params, elem: FpVar<Fr>, path: &[Fr], selectors: &[bool]) -> (FpVar<Fr>, FpVar<Fr>) {
+pub fn make_path(cs: ConstraintSystemRef<Fr>, num: usize, params : &Params, elem: FpVar<Fr>, proof: &Proof) -> (FpVar<Fr>, FpVar<Fr>) {
     let mut acc = elem.clone();
+    let path = &proof.path;
+    let selectors = &proof.selectors;
     let mut idx = FpVar::constant(Fr::from(0));
     let mut pow2 = FpVar::constant(Fr::from(1));
     for i in 0..num {

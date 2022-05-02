@@ -549,6 +549,7 @@ pub mod hash;
 pub mod vm;
 
 pub mod keccak;
+pub mod machine;
 
 #[allow(dead_code)]
 fn test_circuit<T: ConstraintSynthesizer<Fr>>(circuit: T) {
