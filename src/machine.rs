@@ -64,6 +64,19 @@ pub fn hash_module(params: &Params, mach: &Module) -> FpVar<Fr> {
     ])
 }
 
+#[derive(Debug, Clone)]
+pub struct Instruction {
+    opcode: FpVar<Fr>,
+    argumentData: FpVar<Fr>,
+}
+
+fn hash_instruction(params: &Params, inst: &Instruction) -> FpVar<Fr> {
+    poseidon_gadget(&params, vec![
+        inst.opcode.clone(),
+        inst.argumentData.clone(),
+    ])
+}
+
 pub fn prove_instr(
     cs: ConstraintSystemRef<Fr>,
     params : &Params,
