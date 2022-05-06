@@ -23,13 +23,12 @@ pub struct Machine {
     internalStack : FpVar<Fr>,
     blockStack : FpVar<Fr>,
     frameStack : FpVar<Fr>,
-    
+
     globalStateHash : FpVar<Fr>,
     moduleIdx : FpVar<Fr>,
     functionIdx : FpVar<Fr>,
     functionPc : FpVar<Fr>,
     modulesRoot : FpVar<Fr>,
-
 }
 
 pub fn hash_machine(params: &Params, mach: &Machine) -> FpVar<Fr> {
@@ -66,13 +65,13 @@ pub fn hash_module(params: &Params, mach: &Module) -> FpVar<Fr> {
 }
 
 pub fn prove_instr(
-    cs: ConstraintSystemRef<Fr>, 
-    params : &Params, 
-    machine: &Machine, 
+    cs: ConstraintSystemRef<Fr>,
+    params : &Params,
+    machine: &Machine,
     mole: &Module,
-    inst: Fr, 
-    mod_proof: &Proof, 
-    inst_proof: &Proof, 
+    inst: Fr,
+    mod_proof: &Proof,
+    inst_proof: &Proof,
     func_proof: &Proof,
 ) -> FpVar<Fr> {
     let mole_hash = hash_module(params, mole);
@@ -87,5 +86,23 @@ pub fn prove_instr(
     func_idx.enforce_equal(&machine.functionIdx).unwrap();
 
     inst_var
+}
+
+// stack: perhaps there should just be several alternatives for different length stacks ...
+pub fn check_stack(
+    cs: ConstraintSystemRef<Fr>,
+    params : &Params,
+    vars: Vec<FpVar<Fr>>,
+    base: FpVar<Fr>,
+) -> FpVar<Fr> {
+    // compute root from base
+    let mut root = base.clone();
+    for el in vars.iter().rev() {
+        root = poseidon_gadget(&params, vec![
+            el.clone(),
+            root.clone(),
+        ])
+    }
+    root
 }
 
