@@ -13,6 +13,7 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_sponge::poseidon::PoseidonParameters;
 use ark_r1cs_std::boolean::{AllocatedBool,Boolean};
 use ark_r1cs_std::fields::FieldVar;
+use ark_r1cs_std::ToBitsGadget;
 
 use crate::{VM,Transition,hash_code};
 use crate::InstructionCircuit;
@@ -91,8 +92,6 @@ fn hash_value(params: &Params, inst: &Value) -> FpVar<Fr> {
     ])
 }
 
-
-
 pub fn prove_instr(
     cs: ConstraintSystemRef<Fr>,
     params : &Params,
@@ -143,6 +142,15 @@ impl Stack {
     fn push(&mut self, v: FpVar<Fr>) {
         self.values.push(v.clone());
     }
+    fn pop(&mut self) -> FpVar<Fr> {
+        self.values.pop().unwrap()
+    }
+    fn based(v: FpVar<Fr>) -> Self {
+        Stack {
+            values: vec![],
+            base: v,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +165,8 @@ pub struct MachineWithStack {
     functionIdx : FpVar<Fr>,
     functionPc : FpVar<Fr>,
     modulesRoot : FpVar<Fr>,
+
+    valid: Boolean<Fr>,
 }
 
 // There can be savings by sharing the hashing of stacks ...
@@ -175,9 +185,14 @@ pub fn elim_stack(params : &Params, mach: &MachineWithStack) -> Machine {
     }
 }
 
-pub fn execute_const(params: &Params, mach: &MachineWithStack, expected: u32, ty: u32, inst: &Instruction) -> MachineWithStack {
+pub fn check_instruction(mach: &MachineWithStack, expected: u32, inst: &Instruction) -> MachineWithStack {
     let expected = FpVar::constant(Fr::from(expected));
-    inst.opcode.enforce_equal(&expected);
+    let mut mach = mach.clone();
+    mach.valid = mach.valid.and(&inst.opcode.is_eq(&expected).unwrap()).unwrap();
+    mach
+}
+
+pub fn execute_const(params: &Params, mach: &MachineWithStack, ty: u32, inst: &Instruction) -> MachineWithStack {
     let mut mach = mach.clone();
     let v = Value {
         value: inst.argumentData.clone(),
@@ -187,4 +202,86 @@ pub fn execute_const(params: &Params, mach: &MachineWithStack, expected: u32, ty
     mach
 }
 
+pub fn enforce_i32(v: FpVar<Fr>) {
+    let bits = v.to_bits_le().unwrap();
+    let res = Boolean::le_bits_to_fp_var(&bits[0..32]).unwrap();
+    res.enforce_equal(&v).unwrap();
+}
+
+pub fn execute_drop(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+    let mut mach = mach.clone();
+    mach.valueStack.pop();
+    mach
+}
+
+pub fn execute_select(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let selector = mach.valueStack.pop();
+    let b = mach.valueStack.pop();
+    let a = mach.valueStack.pop();
+
+    let sel_bool = selector.is_eq(&FpVar::constant(Fr::from(0))).unwrap();
+    let a_b = sel_bool.select(&a, &b).unwrap();
+    mach.valueStack.push(a_b);
+    mach
+}
+
+pub fn execute_block(params: &Params, mach: &MachineWithStack, inst: &Instruction) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let target_pc = mach.functionPc.clone();
+    enforce_i32(target_pc.clone());
+    mach.blockStack.push(target_pc);
+    mach
+}
+
+pub fn execute_branch(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+    let mut mach = mach.clone();
+    mach.functionPc = mach.blockStack.pop();
+    mach
+}
+
+pub fn execute_branch_if(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let selector = mach.valueStack.pop();
+
+    let sel_bool = selector.is_eq(&FpVar::constant(Fr::from(0))).unwrap();
+    // There are two alternative block stacks, they have to be computed here
+    let mut bs_1 = mach.blockStack.clone();
+    let bs_2 = mach.blockStack.clone();
+    bs_1.pop();
+
+    mach.functionPc = sel_bool.select(&mach.blockStack.pop(), &mach.functionPc).unwrap();
+    mach.blockStack = Stack::based(sel_bool.select(&hash_stack(params, &bs_1), &hash_stack(params, &bs_2)).unwrap());
+    mach
+}
+
+#[derive(Debug, Clone)]
+pub struct StackFrame {
+    returnPc: Value,
+    localsMerkleRoot: FpVar<Fr>,
+    callerModule: FpVar<Fr>,
+    callerModuleInternals: FpVar<Fr>,
+}
+
+fn hash_stack_frame(params: &Params, frame: &StackFrame) -> FpVar<Fr> {
+    poseidon_gadget(&params, vec![
+        hash_value(params, &frame.returnPc),
+        frame.localsMerkleRoot.clone(),
+        frame.callerModule.clone(),
+        frame.callerModuleInternals.clone(),
+    ])
+}
+
+pub fn execute_return(params: &Params, mach: &MachineWithStack, frame: &StackFrame, internal_ref_ty: u32) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let type_eq = frame.returnPc.ty.is_eq(&FpVar::constant(Fr::from(internal_ref_ty))).unwrap();
+    let frame_hash = mach.frameStack.pop();
+    let hash_eq = frame_hash.is_eq(&hash_stack_frame(&params, frame)).unwrap();
+    mach.valid = mach.valid.and(&hash_eq).unwrap().and(&type_eq).unwrap();
+    let data = frame.returnPc.value.to_bits_le().unwrap();
+    mach.functionPc = Boolean::le_bits_to_fp_var(&data[0..32]).unwrap();
+    mach.functionIdx = Boolean::le_bits_to_fp_var(&data[32..64]).unwrap();
+    mach.moduleIdx = Boolean::le_bits_to_fp_var(&data[64..96]).unwrap();
+    mach
+}
 
