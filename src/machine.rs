@@ -285,3 +285,13 @@ pub fn execute_return(params: &Params, mach: &MachineWithStack, frame: &StackFra
     mach
 }
 
+const INTERNAL_TYPE_REF = 6u32;
+
+fn create_return_value(mach: &MachineWithStack) -> FpVar<Fr> {
+    let value = mach.functionPc + mach.functionIdx * FpVar::constant(Fr::from(1 << 32));
+    Value {
+        value,
+        ty: FpVar::constant(Fr::from(INTERNAL_TYPE_REF)),
+    }
+}
+
