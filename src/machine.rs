@@ -223,6 +223,47 @@ pub fn execute_const(params: &Params, mach: &MachineWithStack, ty: u32, inst: &I
     mach
 }
 
+trait InstHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack);
+}
+
+struct InstConstHint {
+    inst: Instruction,
+    ty: u32,
+}
+
+impl InstHint for InstConstHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let before = mach.clone();
+        let after = execute_const(params, mach, self.ty, &self.inst);
+        (before, after)
+    }
+}
+
+fn empty_stack() -> Stack {
+    Stack {
+        values: vec![],
+        base: FpVar::constant(Fr::from(0)),
+    }
+}
+
+fn empty_machine() -> MachineWithStack {
+    MachineWithStack {
+        valueStack: empty_stack(),
+        internalStack: empty_stack(),
+        blockStack: empty_stack(),
+        frameStack: empty_stack(),
+
+        globalStateHash: FpVar::constant(Fr::from(0)),
+        moduleIdx: FpVar::constant(Fr::from(0)),
+        functionIdx: FpVar::constant(Fr::from(0)),
+        functionPc: FpVar::constant(Fr::from(0)),
+        modulesRoot: FpVar::constant(Fr::from(0)),
+
+        valid: Boolean::constant(false),
+    }    
+}
+
 pub fn enforce_i32(v: FpVar<Fr>) {
     let bits = v.to_bits_le().unwrap();
     let res = Boolean::le_bits_to_fp_var(&bits[0..32]).unwrap();
@@ -232,6 +273,34 @@ pub fn enforce_i32(v: FpVar<Fr>) {
 pub fn execute_drop(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     let _popped = mach.valueStack.pop();
+    mach
+}
+
+struct InstDropHint {
+    val: FpVar<Fr>,
+}
+
+impl InstHint for InstDropHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.valueStack.push(self.val.clone());
+        let before = mach.clone();
+        let after = execute_drop(params, &mach);
+        (before, after)
+    }
+}
+
+impl InstDropHint {
+    pub fn default() -> Self {
+        InstDropHint {
+            val: FpVar::constant(Fr::from(0)),
+        }
+    }
+}
+
+fn drop_default_machine() -> MachineWithStack {
+    let mut mach = empty_machine();
+    mach.valueStack.push(FpVar::constant(Fr::from(0)));
     mach
 }
 
@@ -247,7 +316,35 @@ pub fn execute_select(_params: &Params, mach: &MachineWithStack) -> MachineWithS
     mach
 }
 
-pub fn execute_block(_params: &Params, mach: &MachineWithStack, _inst: &Instruction) -> MachineWithStack {
+struct InstSelectHint {
+    val1: FpVar<Fr>,
+    val2: FpVar<Fr>,
+    val3: FpVar<Fr>,
+}
+
+impl InstHint for InstSelectHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.valueStack.push(self.val1.clone());
+        mach.valueStack.push(self.val2.clone());
+        mach.valueStack.push(self.val3.clone());
+        let before = mach.clone();
+        let after = execute_select(params, &mach);
+        (before, after)
+    }
+}
+
+impl InstSelectHint {
+    pub fn default() -> Self {
+        InstSelectHint {
+            val1: FpVar::constant(Fr::from(0)),
+            val2: FpVar::constant(Fr::from(0)),
+            val3: FpVar::constant(Fr::from(0)),
+        }
+    }
+}
+
+pub fn execute_block(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     let target_pc = mach.functionPc.clone();
     enforce_i32(target_pc.clone());
@@ -255,10 +352,50 @@ pub fn execute_block(_params: &Params, mach: &MachineWithStack, _inst: &Instruct
     mach
 }
 
+struct InstBlockHint {
+}
+
+impl InstHint for InstBlockHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let before = mach.clone();
+        let after = execute_drop(params, &mach);
+        (before, after)
+    }
+}
+
+impl InstBlockHint {
+    pub fn default() -> Self {
+        InstBlockHint {
+        }
+    }
+}
+
 pub fn execute_branch(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     mach.functionPc = mach.blockStack.pop();
     mach
+}
+
+struct InstBranchHint {
+    val: FpVar<Fr>,
+}
+
+impl InstHint for InstBranchHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.valueStack.push(self.val.clone());
+        let before = mach.clone();
+        let after = execute_branch(params, &mach);
+        (before, after)
+    }
+}
+
+impl InstBranchHint {
+    pub fn default() -> Self {
+        InstBranchHint {
+            val: FpVar::constant(Fr::from(0)),
+        }
+    }
 }
 
 pub fn execute_branch_if(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
@@ -274,6 +411,34 @@ pub fn execute_branch_if(params: &Params, mach: &MachineWithStack) -> MachineWit
     mach.functionPc = sel_bool.select(&mach.blockStack.pop(), &mach.functionPc).unwrap();
     mach.blockStack = Stack::based(sel_bool.select(&hash_stack(params, &bs_1), &hash_stack(params, &bs_2)).unwrap());
     mach
+}
+
+struct InstBranchIfHint {
+    val1: FpVar<Fr>,
+    val2: FpVar<Fr>,
+    block: FpVar<Fr>,
+}
+
+impl InstHint for InstBranchIfHint {
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.valueStack.push(self.val1.clone());
+        mach.valueStack.push(self.val2.clone());
+        mach.blockStack.push(self.block.clone());
+        let before = mach.clone();
+        let after = execute_branch_if(params, &mach);
+        (before, after)
+    }
+}
+
+impl InstBranchIfHint {
+    pub fn default() -> Self {
+        InstBranchIfHint {
+            val1: FpVar::constant(Fr::from(0)),
+            val2: FpVar::constant(Fr::from(0)),
+            block: FpVar::constant(Fr::from(0)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -416,3 +581,8 @@ pub fn execute_init_frame(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &M
     mach.frameStack.push(hash_stack_frame(params, &frame));
     mach
 }
+
+/*
+combining all instructions...
+in the end, maybe just select a valid alternative
+*/
