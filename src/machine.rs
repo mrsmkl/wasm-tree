@@ -373,3 +373,27 @@ pub fn execute_local_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &Ma
     mach
 }
 
+pub fn execute_global_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, var: &ValueHint, mole: &Module) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(var.hash(params))).unwrap());
+    let (root, idx) = make_path(cs.clone(), 20, params, var.clone(), proof);
+    mach.valid = mach.valid.and(&root.is_eq(&mole.globalsMerkleRoot).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
+    mach.valueStack.push(var);
+    mach
+}
+
+pub fn execute_global_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, old_var: &ValueHint, mole: &Module) -> (MachineWithStack, Module) {
+    let mut mach = mach.clone();
+    let old_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(old_var.hash(params))).unwrap());
+    let var = mach.valueStack.pop();
+    let (root, idx) = make_path(cs.clone(), 20, params, old_var.clone(), proof);
+    mach.valid = mach.valid.and(&root.is_eq(&mole.globalsMerkleRoot).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
+    let (root2, idx2) = make_path(cs.clone(), 20, params, var.clone(), proof);
+    idx2.enforce_equal(&idx).unwrap();
+    let mut mole = mole.clone();
+    mole.globalsMerkleRoot = root2;
+    (mach, mole)
+}
+
