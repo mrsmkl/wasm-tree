@@ -208,13 +208,13 @@ pub fn enforce_i32(v: FpVar<Fr>) {
     res.enforce_equal(&v).unwrap();
 }
 
-pub fn execute_drop(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+pub fn execute_drop(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
-    mach.valueStack.pop();
+    let _popped = mach.valueStack.pop();
     mach
 }
 
-pub fn execute_select(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+pub fn execute_select(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     let selector = mach.valueStack.pop();
     let b = mach.valueStack.pop();
@@ -226,7 +226,7 @@ pub fn execute_select(params: &Params, mach: &MachineWithStack) -> MachineWithSt
     mach
 }
 
-pub fn execute_block(params: &Params, mach: &MachineWithStack, inst: &Instruction) -> MachineWithStack {
+pub fn execute_block(_params: &Params, mach: &MachineWithStack, _inst: &Instruction) -> MachineWithStack {
     let mut mach = mach.clone();
     let target_pc = mach.functionPc.clone();
     enforce_i32(target_pc.clone());
@@ -234,7 +234,7 @@ pub fn execute_block(params: &Params, mach: &MachineWithStack, inst: &Instructio
     mach
 }
 
-pub fn execute_branch(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
+pub fn execute_branch(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     mach.functionPc = mach.blockStack.pop();
     mach
@@ -248,7 +248,7 @@ pub fn execute_branch_if(params: &Params, mach: &MachineWithStack) -> MachineWit
     // There are two alternative block stacks, they have to be computed here
     let mut bs_1 = mach.blockStack.clone();
     let bs_2 = mach.blockStack.clone();
-    bs_1.pop();
+    let _popped = bs_1.pop();
 
     mach.functionPc = sel_bool.select(&mach.blockStack.pop(), &mach.functionPc).unwrap();
     mach.blockStack = Stack::based(sel_bool.select(&hash_stack(params, &bs_1), &hash_stack(params, &bs_2)).unwrap());

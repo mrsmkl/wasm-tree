@@ -177,10 +177,6 @@ impl IntegerPermutation {
         Self::new_for_max_and_min(0, size - 1)
     }
 
-    pub fn new_from_permutation(permutation: Vec<u64>) -> Self {
-        unimplemented!();
-    }
-
     pub(crate) fn new_for_max_and_min(min: usize, max: usize) -> Self {
         let elements: Vec<usize> = (min..=max).collect();
 

@@ -88,6 +88,6 @@ pub fn test_tree(params: &PoseidonParameters<Fr>) {
     }
     // println!("{:?}", nodes);
     let tree = Tree {nodes};
-    hash_tree(&cs, &tree, &params, &params_g, &vars, &inputs);
+    let _res = hash_tree(&cs, &tree, &params, &params_g, &vars, &inputs);
     println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
 }

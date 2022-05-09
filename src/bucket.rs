@@ -186,8 +186,8 @@ fn route_buckets(buckets: &Vec<Bucket>, elems: usize) -> IntegerPermutation {
 
 // make merkle tree from variables
 fn hash_tree(
-    cs: &ConstraintSystemRef<Fr>,
-    params: &PoseidonParameters<Fr>,
+    _cs: &ConstraintSystemRef<Fr>,
+    _params: &PoseidonParameters<Fr>,
     params_g: &CRHParametersVar::<Fr>,
     vars: &[FpVar<Fr>],
 ) -> Vec<FpVar<Fr>> {

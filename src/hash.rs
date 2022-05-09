@@ -32,13 +32,13 @@ pub struct Params {
 pub fn generate_params() -> Params {
     let mut test_rng = ark_std::test_rng();
     let mut c = vec![];
-    for i in 0..1000 {
+    for _i in 0..1000 {
         c.push(Fr::rand(&mut test_rng))
     }
     let mut m = vec![];
-    for i in 0..20 {
+    for _i in 0..20 {
         let mut a = vec![];
-        for j in 0..20 {
+        for _j in 0..20 {
             a.push(Fr::rand(&mut test_rng))
         }
         m.push(a)
@@ -179,7 +179,7 @@ impl InstructionCircuit for TestCircuit {
     }
 }
 
-fn generate_step(cs: ConstraintSystemRef<Fr>, params: PoseidonParameters<Fr>, params_g: &CRHParametersVar::<Fr>)
+fn generate_step(cs: ConstraintSystemRef<Fr>, _params: PoseidonParameters<Fr>, params_g: &CRHParametersVar::<Fr>)
 -> Result<FpVar<Fr>, SynthesisError> {
     let var_a = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(1))).unwrap());
     let var_b = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(2))).unwrap());
@@ -208,7 +208,7 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
         let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(self.params.clone())).unwrap();
         // make each step
         let mut vars = vec![];
-        for el in 0..self.steps {
+        for _el in 0..self.steps {
             let var = generate_step(cs.clone(), self.params.clone(), &params_g);
             vars.push(var);
         }
@@ -253,17 +253,13 @@ pub fn make_path(cs: ConstraintSystemRef<Fr>, num: usize, params : &Params, elem
     (acc, idx)
 }
 
-pub fn test(params: &PoseidonParameters<Fr>) {
+pub fn test(_params: &PoseidonParameters<Fr>) {
     use ark_std::test_rng;
     use crate::InnerSNARK;
     use ark_crypto_primitives::CircuitSpecificSetupSNARK;
     use ark_crypto_primitives::SNARK;
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
-    let circuit = TestCircuit {
-        params: params.clone(),
-        steps: 100,
-    };
     let params = generate_params();
     println!("hash {}", poseidon(&params, vec![Fr::from(123), Fr::from(123), Fr::from(123)]));
     let v1 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
@@ -272,11 +268,16 @@ pub fn test(params: &PoseidonParameters<Fr>) {
     let v4 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
     let v5 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
     let v6 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
-    let v7 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
+    let _v7 = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(123))).unwrap());
     let res = poseidon_gadget(&params, vec![v1, v2, v3, v4, v5, v6]);
     println!("gadget {}", res.value().unwrap());
     println!("constraints {}", cs.num_constraints());
-    // circuit.generate_constraints(cs);
+    /*
+    let circuit = TestCircuit {
+        params: params.clone(),
+        steps: 100,
+    };
+    circuit.generate_constraints(cs); */
     /*
     let mut rng = test_rng();
     println!("Setting up circuit");

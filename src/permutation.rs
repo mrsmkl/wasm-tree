@@ -24,13 +24,13 @@ use ark_r1cs_std::R1CSVar;
 use crate::as_waksman::AsWaksmanRoute;
 use crate::as_waksman::AsWaksmanTopology;
 
-fn make_switch(cs: ConstraintSystemRef<Fr>, a: FpVar<Fr>, b: FpVar<Fr>, switch: Boolean<Fr>) -> (FpVar<Fr>,FpVar<Fr>) {
+fn make_switch(a: FpVar<Fr>, b: FpVar<Fr>, switch: Boolean<Fr>) -> (FpVar<Fr>,FpVar<Fr>) {
     let out1 = switch.select(&a, &b).unwrap();
     let out2 = switch.select(&b, &a).unwrap();
     (out1, out2)
 }
 
-fn make_switch_list(cs: ConstraintSystemRef<Fr>, a: Vec<FpVar<Fr>>, b: Vec<FpVar<Fr>>, switch: Boolean<Fr>) -> (Vec<FpVar<Fr>>,Vec<FpVar<Fr>>) {
+fn make_switch_list(a: Vec<FpVar<Fr>>, b: Vec<FpVar<Fr>>, switch: Boolean<Fr>) -> (Vec<FpVar<Fr>>,Vec<FpVar<Fr>>) {
     let mut out1 = vec![];
     let mut out2 = vec![];
     for i in 0..a.len() {
@@ -62,9 +62,9 @@ pub fn permutation(cs: ConstraintSystemRef<Fr>, lst: Vec<FpVar<Fr>>, perm: Integ
                     p_idx += 1;
                 }
                 Some(switch_val) => {
-                    let switch2 = topology.topology[column_idx][p_idx+1];
+                    let _switch2 = topology.topology[column_idx][p_idx+1];
                     let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(switch_val)).unwrap());
-                    let (v1, v2) = make_switch(cs.clone(), permutation[p_idx].clone(), permutation[p_idx+1].clone(), bool_var);
+                    let (v1, v2) = make_switch(permutation[p_idx].clone(), permutation[p_idx+1].clone(), bool_var);
                     next_permutation[switch1.0] = v2;
                     next_permutation[switch1.1] = v1;
                     p_idx += 2;
@@ -99,7 +99,7 @@ pub fn permutation_list(cs: ConstraintSystemRef<Fr>, lst: Vec<Vec<FpVar<Fr>>>, p
                 }
                 Some(switch_val) => {
                     let bool_var = Boolean::from(AllocatedBool::<Fr>::new_witness(cs.clone(), || Ok(switch_val)).unwrap());
-                    let (v1, v2) = make_switch_list(cs.clone(), permutation[packet_idx].clone(), permutation[packet_idx+1].clone(), bool_var);
+                    let (v1, v2) = make_switch_list(permutation[packet_idx].clone(), permutation[packet_idx+1].clone(), bool_var);
                     next_permutation[switch1.0] = v2;
                     next_permutation[switch1.1] = v1;
                 }
@@ -136,6 +136,6 @@ pub fn test_permutation() {
         vars.push(var);
     }
 
-    let vars_perm = permutation(cs.clone(), vars.clone(), perm.clone());
+    let _vars_perm = permutation(cs.clone(), vars.clone(), perm.clone());
     println!("num constraints {}, valid {}", cs.num_constraints(), cs.is_satisfied().unwrap());
 }

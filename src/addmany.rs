@@ -133,23 +133,23 @@ pub fn test(params: &PoseidonParameters<Fr>, step: (VM, VM)) {
     use crate::InnerSNARK;
     use ark_crypto_primitives::CircuitSpecificSetupSNARK;
     use ark_crypto_primitives::SNARK;
-    let cs_sys = ConstraintSystem::<Fr>::new();
-    let cs = ConstraintSystemRef::new(cs_sys);
     let mut steps = vec![];
-    for i in 0..256 {
+    for _i in 0..256 {
         steps.push(step.clone())
     }
     let circuit = AddManyCircuit {
         params: params.clone(),
         steps,
     };
-    // circuit.generate_constraints(cs);
+    /* let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    circuit.generate_constraints(cs); */
     let mut rng = test_rng();
     println!("Setting up circuit");
-    let (pk, vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
+    let (pk, _vk) = InnerSNARK::setup(circuit.clone(), &mut rng).unwrap();
     println!("Testing prove");
     let start = Instant::now();
-    let proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
+    let _proof = InnerSNARK::prove(&pk, circuit.clone(), &mut rng).unwrap();
     let elapsed = start.elapsed();
     println!("proving took {} ms", elapsed.as_millis());
 }

@@ -73,7 +73,7 @@ fn hash_code(params: &Params, code: &[u64]) -> Fr {
 fn decode(a: u64, n: usize) -> Vec<bool> {
     let mut res = vec![];
     let mut a = a;
-    for i in 0..n {
+    for _i in 0..n {
         let x = a%2;
         res.push(if x == 0 { false } else { true });
         a = a/2;
@@ -88,7 +88,7 @@ fn decode_var(cs: &ConstraintSystemRef<Fr>, a: u64, n: usize) -> Vec<Boolean<Fr>
 fn decode2(a: u128, n: usize) -> Vec<bool> {
     let mut res = vec![];
     let mut a = a;
-    for i in 0..n {
+    for _i in 0..n {
         let x = a%2;
         res.push(if x == 0 { false } else { true });
         a = a/2;
@@ -124,7 +124,7 @@ fn generate_step(cs: &ConstraintSystemRef<Fr>, before: VM, before_var: VMVar) ->
     // Instruction comes from boolean wires...
     let inst_var = Boolean::le_bits_to_fp_var(&inst_bools).unwrap();
     let prev_hash = poseidon_gadget(params, vec![inst_var, next_hash.clone()]);
-    before_var.pc_hash.enforce_equal(&prev_hash);
+    before_var.pc_hash.enforce_equal(&prev_hash).unwrap();
 
     // Select registers
     let a_var = FpVar::conditionally_select_power_of_two_vector(&inst_bools[0..2], &before_var.registers).unwrap();
@@ -146,6 +146,8 @@ fn generate_step(cs: &ConstraintSystemRef<Fr>, before: VM, before_var: VMVar) ->
 
     let ops = vec![add_var, mul_var, minus_var, neg_var];
     let selected = FpVar::conditionally_select_power_of_two_vector(&inst_bools[4..6], &ops).unwrap();
+
+    combined_var.enforce_equal(&selected).unwrap();
 
     // Then need to select the result registers
     let r1var = FpVar::conditionally_select_power_of_two_vector(&inst_bools[6..7], &vec![before_var.registers[0].clone(), selected.clone()]).unwrap();
@@ -172,7 +174,7 @@ fn generate_memop(cs: &ConstraintSystemRef<Fr>, before: VM, before_var: VMVar, c
     // Instruction comes from boolean wires...
     let inst_var = Boolean::le_bits_to_fp_var(&inst_bools).unwrap();
     let prev_hash = poseidon_gadget(params, vec![inst_var, next_hash.clone()]);
-    before_var.pc_hash.enforce_equal(&prev_hash);
+    before_var.pc_hash.enforce_equal(&prev_hash).unwrap();
 
     // Select registers
     let a_var = FpVar::conditionally_select_power_of_two_vector(&inst_bools[0..2], &before_var.registers).unwrap();
@@ -286,7 +288,7 @@ pub fn test() {
         registers: vec![0,0,0,0],
     };
     let vm_var = vmvar(&cs, &params, vm.clone());
-    generate_step(&cs, vm, vm_var);
+    generate_step(&cs, vm, vm_var).unwrap();
     // println!("gadget {}", res.value().unwrap());
     println!("constraints {}", cs.num_constraints());
 }

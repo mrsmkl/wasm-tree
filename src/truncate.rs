@@ -37,7 +37,7 @@ fn sum_transitions(v: Vec<FpVar<Fr>>) -> FpVar<Fr> {
 }
 
 fn sum_sequence(
-    params: &PoseidonParameters<Fr>,
+    _params: &PoseidonParameters<Fr>,
     params_g: &CRHParametersVar::<Fr>,
     v: Vec<FpVar<Fr>>,
 ) -> FpVar<Fr> {
@@ -52,7 +52,7 @@ fn sum_sequence(
 pub fn test(params: &PoseidonParameters<Fr>) {
     let cs_sys = ConstraintSystem::<Fr>::new();
     let cs = ConstraintSystemRef::new(cs_sys);
-    let params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
+    let _params_g = CRHParametersVar::<Fr>::new_witness(cs.clone(), || Ok(params.clone())).unwrap();
 
     let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(100))).unwrap());
     let tvar = truncate(var.clone());
