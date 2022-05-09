@@ -357,3 +357,19 @@ pub fn execute_local_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &Ma
     mach
 }
 
+pub fn execute_local_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, old_var: &ValueHint, frame: &StackFrame) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let old_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(old_var.hash(params))).unwrap());
+    let var = mach.valueStack.pop();
+    let (root, idx) = make_path(cs.clone(), 20, params, old_var.clone(), proof);
+    mach.frameStack.pop().enforce_equal(&hash_stack_frame(params, frame)).unwrap();
+    mach.valid = mach.valid.and(&root.is_eq(&frame.localsMerkleRoot).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
+    let (root2, idx2) = make_path(cs.clone(), 20, params, var.clone(), proof);
+    idx2.enforce_equal(&idx).unwrap();
+    let mut frame = frame.clone();
+    frame.localsMerkleRoot = root2;
+    mach.frameStack.push(hash_stack_frame(params, &frame));
+    mach
+}
+
