@@ -17,7 +17,7 @@ use ark_r1cs_std::ToBitsGadget;
 
 use crate::{VM,Transition,hash_code};
 use crate::InstructionCircuit;
-use crate::hash::{Params, poseidon_gadget, Proof, make_path};
+use crate::hash::{Params, poseidon_gadget, Proof, make_path, poseidon};
 
 #[derive(Debug, Clone)]
 pub struct Machine {
@@ -83,6 +83,21 @@ fn hash_instruction(params: &Params, inst: &Instruction) -> FpVar<Fr> {
 pub struct Value {
     value: FpVar<Fr>,
     ty: FpVar<Fr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ValueHint {
+    value: u64,
+    ty: u32,
+}
+
+impl ValueHint {
+    fn hash(&self, params: &Params) -> Fr {
+        poseidon(&params, vec![
+            Fr::from(self.value.clone()),
+            Fr::from(self.ty.clone()),
+        ])
+    }
 }
 
 fn hash_value(params: &Params, inst: &Value) -> FpVar<Fr> {
@@ -328,6 +343,17 @@ pub fn execute_cross_module_call(params: &Params, mach: &MachineWithStack, inst:
     mach.functionIdx = Boolean::le_bits_to_fp_var(&data[0..32]).unwrap();
     mach.moduleIdx = Boolean::le_bits_to_fp_var(&data[32..64]).unwrap();
     mach.functionPc = FpVar::constant(Fr::from(0));
+    mach
+}
+
+pub fn execute_local_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, var: &ValueHint, frame: &StackFrame) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(var.hash(params))).unwrap());
+    let (root, idx) = make_path(cs.clone(), 20, params, var.clone(), proof);
+    mach.frameStack.peek().enforce_equal(&hash_stack_frame(params, frame)).unwrap();
+    mach.valid = mach.valid.and(&root.is_eq(&frame.localsMerkleRoot).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
+    mach.valueStack.push(var);
     mach
 }
 
