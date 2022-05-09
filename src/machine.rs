@@ -397,3 +397,22 @@ pub fn execute_global_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &M
     (mach, mole)
 }
 
+pub fn execute_init_frame(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, returnPc: &ValueHint) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let callerModuleInternals = mach.valueStack.pop();
+    let callerModule = mach.valueStack.pop();
+    let returnPcHash = mach.valueStack.pop();
+    let returnPc = Value {
+        value: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(returnPc.value))).unwrap()),
+        ty: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(returnPc.ty))).unwrap()),
+    };
+    hash_value(params, &returnPc).enforce_equal(&returnPcHash).unwrap();
+    let frame = StackFrame {
+        callerModuleInternals,
+        callerModule,
+        returnPc,
+        localsMerkleRoot: inst.argumentData.clone(),
+    };
+    mach.frameStack.push(hash_stack_frame(params, &frame));
+    mach
+}
