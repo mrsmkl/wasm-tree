@@ -129,7 +129,7 @@ pub fn hash_stack(
 ) -> FpVar<Fr> {
     // compute root from base
     let mut root = stack.base.clone();
-    for el in stack.values.iter().rev() {
+    for el in stack.values.iter() {
         root = poseidon_gadget(&params, vec![
             el.clone(),
             root.clone(),
@@ -145,6 +145,9 @@ impl Stack {
     fn pop(&mut self) -> FpVar<Fr> {
         self.values.pop().unwrap()
     }
+    fn peek(&mut self) -> FpVar<Fr> {
+        self.values[self.values.len()-1].clone()
+    }
     fn based(v: FpVar<Fr>) -> Self {
         Stack {
             values: vec![],
@@ -152,6 +155,9 @@ impl Stack {
         }
     }
 }
+
+const I32_TYPE : u32 = 0u32;
+const INTERNAL_TYPE_REF : u32 = 6u32;
 
 #[derive(Debug, Clone)]
 pub struct MachineWithStack {
@@ -272,9 +278,9 @@ fn hash_stack_frame(params: &Params, frame: &StackFrame) -> FpVar<Fr> {
     ])
 }
 
-pub fn execute_return(params: &Params, mach: &MachineWithStack, frame: &StackFrame, internal_ref_ty: u32) -> MachineWithStack {
+pub fn execute_return(params: &Params, mach: &MachineWithStack, frame: &StackFrame) -> MachineWithStack {
     let mut mach = mach.clone();
-    let type_eq = frame.returnPc.ty.is_eq(&FpVar::constant(Fr::from(internal_ref_ty))).unwrap();
+    let type_eq = frame.returnPc.ty.is_eq(&FpVar::constant(Fr::from(INTERNAL_TYPE_REF))).unwrap();
     let frame_hash = mach.frameStack.pop();
     let hash_eq = frame_hash.is_eq(&hash_stack_frame(&params, frame)).unwrap();
     mach.valid = mach.valid.and(&hash_eq).unwrap().and(&type_eq).unwrap();
@@ -285,13 +291,43 @@ pub fn execute_return(params: &Params, mach: &MachineWithStack, frame: &StackFra
     mach
 }
 
-const INTERNAL_TYPE_REF = 6u32;
-
-fn create_return_value(mach: &MachineWithStack) -> FpVar<Fr> {
-    let value = mach.functionPc + mach.functionIdx * FpVar::constant(Fr::from(1 << 32));
+fn create_return_value(mach: &MachineWithStack) -> Value {
+    let value =
+        mach.functionPc.clone() +
+        mach.functionIdx.clone() * FpVar::constant(Fr::from(1 << 32)) +
+        mach.moduleIdx.clone() * FpVar::constant(Fr::from(1 << 64));
     Value {
         value,
         ty: FpVar::constant(Fr::from(INTERNAL_TYPE_REF)),
     }
+}
+
+fn create_i32_value(value: FpVar<Fr>) -> Value {
+    enforce_i32(value.clone());
+    Value { value, ty: FpVar::constant(Fr::from(I32_TYPE)) }
+}
+
+pub fn execute_call(params: &Params, mach: &MachineWithStack, frame: &StackFrame, inst: &Instruction) -> MachineWithStack {
+    let mut mach = mach.clone();
+    mach.valueStack.push(hash_value(params, &create_return_value(&mach)));
+    mach.frameStack.peek().enforce_equal(&hash_stack_frame(params, frame)).unwrap();
+    mach.valueStack.push(hash_value(params, &create_i32_value(frame.callerModule.clone())));
+    mach.valueStack.push(hash_value(params, &create_i32_value(frame.callerModuleInternals.clone())));
+    mach.functionIdx = inst.argumentData.clone();
+    enforce_i32(inst.argumentData.clone());
+    mach.functionPc = FpVar::constant(Fr::from(0));
+    mach
+}
+
+pub fn execute_cross_module_call(params: &Params, mach: &MachineWithStack, inst: &Instruction, mole: &Module) -> MachineWithStack {
+    let mut mach = mach.clone();
+    mach.valueStack.push(hash_value(params, &create_return_value(&mach)));
+    mach.valueStack.push(hash_value(params, &create_i32_value(mach.moduleIdx.clone())));
+    mach.valueStack.push(hash_value(params, &create_i32_value(mole.internalsOffset.clone())));
+    let data = inst.argumentData.to_bits_le().unwrap();
+    mach.functionIdx = Boolean::le_bits_to_fp_var(&data[0..32]).unwrap();
+    mach.moduleIdx = Boolean::le_bits_to_fp_var(&data[32..64]).unwrap();
+    mach.functionPc = FpVar::constant(Fr::from(0));
+    mach
 }
 
