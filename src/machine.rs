@@ -303,30 +303,39 @@ trait Inst {
 }
 
 struct InstConstHint {
-    inst: InstructionHint,
 }
 
 struct InstConst {
-    inst: Instruction,
     ty: u32,
 }
 
+fn default_instruction() -> InstructionHint {
+    InstructionHint {
+        opcode: 0,
+        argumentData: 0,
+    }
+}
+
+/*
+fn convert_instr(&self, cs: ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
+    let inst = Instruction {
+        opcode: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.inst.opcode))).unwrap()),
+        argumentData: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.inst.argumentData))).unwrap()),
+    };
+    InstConst {
+        ty,
+        inst,
+    }
+}
+*/
+
 impl InstConstHint {
     fn default() -> Self {
-        let inst = InstructionHint {
-            opcode: 0,
-            argumentData: 0,
-        };
-        InstConstHint { inst }
+        InstConstHint { }
     }
     fn convert(&self, cs: ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
-        let inst = Instruction {
-            opcode: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.inst.opcode))).unwrap()),
-            argumentData: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.inst.argumentData))).unwrap()),
-        };
         InstConst {
             ty,
-            inst,
         }
     }
 }
@@ -334,7 +343,7 @@ impl InstConstHint {
 impl Inst for InstConst {
     fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let before = mach.clone();
-        let after = execute_const(params, mach, self.ty, &self.inst);
+        let after = execute_const(params, mach, self.ty);
         (before, after)
     }
 }
