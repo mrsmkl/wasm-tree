@@ -91,6 +91,26 @@ pub struct Module {
     internalsOffset: FpVar<Fr>,
 }
 
+pub struct ModuleHint {
+    globalsMerkleRoot: Fr,
+    moduleMemory: Fr,
+    tablesMerkleRoot: Fr,
+    functionsMerkleRoot: Fr,
+    internalsOffset: Fr,
+}
+
+impl ModuleHint {
+    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> Module {
+        Module {
+            globalsMerkleRoot: witness(&cs, &self.globalsMerkleRoot),
+            moduleMemory: witness(&cs, &self.moduleMemory),
+            tablesMerkleRoot: witness(&cs, &self.tablesMerkleRoot),
+            functionsMerkleRoot: witness(&cs, &self.functionsMerkleRoot),
+            internalsOffset: witness(&cs, &self.internalsOffset),
+        }
+    }
+}
+
 pub fn hash_module(params: &Params, mach: &Module) -> FpVar<Fr> {
     poseidon_gadget(&params, vec![
         mach.globalsMerkleRoot.clone(),
@@ -162,23 +182,20 @@ pub fn prove_instr(
     params : &Params,
     machine: &Machine,
     mole: &Module,
-    inst: Fr,
+    inst_var: FpVar<Fr>,
     mod_proof: &Proof,
     inst_proof: &Proof,
     func_proof: &Proof,
-) -> FpVar<Fr> {
+) {
     let mole_hash = hash_module(params, mole);
     let (mole_root, mole_idx) = make_path(cs.clone(), 16, params, mole_hash, mod_proof);
     mole_root.enforce_equal(&machine.modulesRoot).unwrap();
     mole_idx.enforce_equal(&machine.moduleIdx).unwrap();
-    let inst_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(inst.clone())).unwrap());
     let (inst_root, inst_idx) = make_path(cs.clone(), 20, params, inst_var.clone(), inst_proof);
     inst_idx.enforce_equal(&machine.functionPc).unwrap();
     let (func_root, func_idx) = make_path(cs.clone(), 16, params, inst_root, func_proof);
     func_root.enforce_equal(&mole.functionsMerkleRoot).unwrap();
     func_idx.enforce_equal(&machine.functionIdx).unwrap();
-
-    inst_var
 }
 
 #[derive(Debug, Clone)]
@@ -303,7 +320,13 @@ pub fn execute_const(params: &Params, mach: &MachineWithStack, ty: u32) -> Machi
 }
 
 trait Inst {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack);
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack);
+    fn code() -> u32;
+    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let (before, after) = self.execute_internal(params, mach);
+        let after = check_instruction(&after, Self::code());
+        (before, after)
+    }
 }
 
 struct InstConstHint {
@@ -331,7 +354,7 @@ impl InstConstHint {
     fn default() -> Self {
         InstConstHint { }
     }
-    fn convert(&self, cs: ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
+    fn convert(&self, _cs: ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
         InstConst {
             ty,
         }
@@ -339,7 +362,10 @@ impl InstConstHint {
 }
 
 impl Inst for InstConst {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+    fn code() -> u32 {
+        12
+    }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let before = mach.clone();
         let after = execute_const(params, mach, self.ty);
         (before, after)
@@ -386,7 +412,10 @@ struct InstDrop {
 }
 
 impl Inst for InstDrop {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+    fn code() -> u32 {
+        12
+    }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.valueStack.push(self.val.clone());
         let before = mach.clone();
@@ -401,9 +430,6 @@ impl InstDropHint {
             val: 0,
         }
     }
-}
-
-impl InstDropHint {
     fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstDrop {
         InstDrop {
             val: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.val))).unwrap()),
@@ -419,105 +445,6 @@ fn drop_default_machine() -> MachineWithStack {
 }
 */
 
-/* Combining instructions, how should it work.
-   Probably need a lot of witness variables...
-*/
-
-enum InstProof {
-    ConstI32(InstConstHint),
-    ConstI64(InstConstHint),
-    ConstF32(InstConstHint),
-    ConstF64(InstConstHint),
-    Drop(InstDropHint),
-}
-
-struct InstWitness {
-    const_i32: InstConst,
-    const_i64: InstConst,
-    const_f32: InstConst,
-    const_f64: InstConst,
-    drop: InstDrop,
-}
-
-fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitness {
-    let mut hint_const_i32 = InstConstHint::default();
-    let mut hint_const_i64 = InstConstHint::default();
-    let mut hint_const_f32 = InstConstHint::default();
-    let mut hint_const_f64 = InstConstHint::default();
-    let mut hint_drop = InstDropHint::default();
-    use crate::machine::InstProof::*;
-    match proof {
-        ConstI32(hint) => {
-            hint_const_i32 = hint;
-        }
-        ConstI64(hint) => {
-            hint_const_i64 = hint;
-        }
-        ConstF32(hint) => {
-            hint_const_f32 = hint;
-        }
-        ConstF64(hint) => {
-            hint_const_f64 = hint;
-        }
-        Drop(hint) => {
-            hint_drop = hint;
-        }
-    };
-    InstWitness {
-        const_i32: hint_const_i32.convert(cs.clone(), 0),
-        const_i64: hint_const_i64.convert(cs.clone(), 1),
-        const_f32: hint_const_f32.convert(cs.clone(), 2),
-        const_f64: hint_const_f64.convert(cs.clone(), 3),
-        drop: hint_drop.convert(cs.clone()),
-    }
-}
-
-fn select_machine(params: &Params, v: Vec<(MachineWithStack, MachineWithStack)>) -> (FpVar<Fr>, FpVar<Fr>) {
-    let mut valid = FpVar::constant(Fr::from(0));
-    let mut before = FpVar::constant(Fr::from(0));
-    let mut after = FpVar::constant(Fr::from(0));
-    for (be,af) in v {
-        let is_valid : FpVar<Fr> = From::from(af.valid.clone());
-        valid = valid + is_valid.clone();
-        let hash_be = hash_machine_with_stack(params, &be);
-        let hash_af = hash_machine_with_stack(params, &af);
-        before = before + hash_be*is_valid.clone();
-        after = after + hash_af*is_valid.clone();
-    }
-    valid.enforce_equal(&FpVar::constant(Fr::from(1))).unwrap();
-    (before, after)
-}
-
-fn make_proof(
-    cs: ConstraintSystemRef<Fr>,
-    params: &Params,
-    machine_hint: &MachineHint,
-    proof: InstProof,
-    inst: InstructionHint,
-) -> (FpVar<Fr>, FpVar<Fr>) {
-    let base_machine = machine_hint.convert(cs.clone());
-    let inst = convert_instruction(inst, cs.clone());
-
-    // Base machine is enough for correctness of the instruction
-
-    let base_machine = intro_stack(&base_machine, &inst);
-    let witness = proof_to_witness(proof, cs.clone());
-    let const_i32 = witness.const_i32.execute(params, &base_machine);
-    let const_i64 = witness.const_i64.execute(params, &base_machine);
-    let const_f32 = witness.const_f32.execute(params, &base_machine);
-    let const_f64 = witness.const_f64.execute(params, &base_machine);
-    let drop = witness.drop.execute(params, &base_machine);
-
-    select_machine(params, vec![
-        const_i32,
-        const_i64,
-        const_f32,
-        const_f64,
-        drop,
-    ])
-}
-
-/*
 pub fn execute_select(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     let selector = mach.valueStack.pop();
@@ -530,14 +457,21 @@ pub fn execute_select(_params: &Params, mach: &MachineWithStack) -> MachineWithS
     mach
 }
 
-struct InstSelectHint {
+struct InstSelect {
     val1: FpVar<Fr>,
     val2: FpVar<Fr>,
     val3: FpVar<Fr>,
 }
 
-impl InstHint for InstSelectHint {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+struct InstSelectHint {
+    val1: Fr,
+    val2: Fr,
+    val3: Fr,
+}
+
+impl Inst for InstSelect {
+    fn code() -> u32 { 23 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.valueStack.push(self.val1.clone());
         mach.valueStack.push(self.val2.clone());
@@ -551,9 +485,16 @@ impl InstHint for InstSelectHint {
 impl InstSelectHint {
     pub fn default() -> Self {
         InstSelectHint {
-            val1: FpVar::constant(Fr::from(0)),
-            val2: FpVar::constant(Fr::from(0)),
-            val3: FpVar::constant(Fr::from(0)),
+            val1: Fr::from(0),
+            val2: Fr::from(0),
+            val3: Fr::from(0),
+        }
+    }
+    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstSelect {
+        InstSelect {
+            val1: witness(&cs, &self.val1),
+            val2: witness(&cs, &self.val2),
+            val3: witness(&cs, &self.val3),
         }
     }
 }
@@ -569,8 +510,12 @@ pub fn execute_block(_params: &Params, mach: &MachineWithStack) -> MachineWithSt
 struct InstBlockHint {
 }
 
-impl InstHint for InstBlockHint {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+struct InstBlock {
+}
+
+impl Inst for InstBlock {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let before = mach.clone();
         let after = execute_drop(params, &mach);
         (before, after)
@@ -582,6 +527,10 @@ impl InstBlockHint {
         InstBlockHint {
         }
     }
+    fn convert(&self, _cs: ConstraintSystemRef<Fr>) -> InstBlock {
+        InstBlock {
+        }
+    }
 }
 
 pub fn execute_branch(_params: &Params, mach: &MachineWithStack) -> MachineWithStack {
@@ -590,12 +539,17 @@ pub fn execute_branch(_params: &Params, mach: &MachineWithStack) -> MachineWithS
     mach
 }
 
-struct InstBranchHint {
+struct InstBranch {
     val: FpVar<Fr>,
 }
 
-impl InstHint for InstBranchHint {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+struct InstBranchHint {
+    val: Fr,
+}
+
+impl Inst for InstBranch {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.valueStack.push(self.val.clone());
         let before = mach.clone();
@@ -607,7 +561,12 @@ impl InstHint for InstBranchHint {
 impl InstBranchHint {
     pub fn default() -> Self {
         InstBranchHint {
-            val: FpVar::constant(Fr::from(0)),
+            val: Fr::from(0),
+        }
+    }
+    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstBranch {
+        InstBranch {
+            val: witness(&cs, &self.val),
         }
     }
 }
@@ -627,14 +586,21 @@ pub fn execute_branch_if(params: &Params, mach: &MachineWithStack) -> MachineWit
     mach
 }
 
-struct InstBranchIfHint {
+struct InstBranchIf {
     val1: FpVar<Fr>,
     val2: FpVar<Fr>,
     block: FpVar<Fr>,
 }
 
-impl InstHint for InstBranchIfHint {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+struct InstBranchIfHint {
+    val1: Fr,
+    val2: Fr,
+    block: Fr,
+}
+
+impl Inst for InstBranchIf {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.valueStack.push(self.val1.clone());
         mach.valueStack.push(self.val2.clone());
@@ -648,12 +614,21 @@ impl InstHint for InstBranchIfHint {
 impl InstBranchIfHint {
     pub fn default() -> Self {
         InstBranchIfHint {
-            val1: FpVar::constant(Fr::from(0)),
-            val2: FpVar::constant(Fr::from(0)),
-            block: FpVar::constant(Fr::from(0)),
+            val1: Fr::from(0),
+            val2: Fr::from(0),
+            block: Fr::from(0),
+        }
+    }
+    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstBranchIf {
+        InstBranchIf {
+            val1: witness(&cs, &self.val1),
+            val2: witness(&cs, &self.val2),
+            block: witness(&cs, &self.block),
         }
     }
 }
+
+/*
 
 #[derive(Debug, Clone)]
 pub struct StackFrame {
@@ -697,11 +672,16 @@ pub fn execute_return(params: &Params, mach: &MachineWithStack, frame: &StackFra
 }
 
 struct InstReturnHint {
+    frame: StackFrameHint,
+}
+
+struct InstReturn {
     frame: StackFrame,
 }
 
-impl InstHint for InstReturnHint {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+impl Inst for InstReturn {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.frameStack.push(hash_stack_frame(&params, &self.frame));
         let before = mach.clone();
@@ -749,19 +729,20 @@ struct InstCallHint {
 
 }
 
-impl InstHint for InstReturnHint {
-    fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+impl InstHint for InstCallHint {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.frameStack.push(hash_stack_frame(&params, &self.frame));
         let before = mach.clone();
-        let after = execute_return(params, &mach, &self.frame);
+        let after = execute_call(params, &mach, &self.frame);
         (before, after)
     }
 }
 
-impl InstReturnHint {
+impl InstCallHint {
     pub fn default() -> Self {
-        InstReturnHint { frame: StackFrame::default() }
+        InstCallHint { frame: StackFrame::default() }
     }
 }
 
@@ -850,7 +831,119 @@ pub fn execute_init_frame(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &M
 }
 */
 
-/*
-combining all instructions...
+/* Combining instructions, how should it work.
+   Probably need a lot of witness variables...
 in the end, maybe just select a valid alternative
 */
+
+enum InstProof {
+    ConstI32(InstConstHint),
+    ConstI64(InstConstHint),
+    ConstF32(InstConstHint),
+    ConstF64(InstConstHint),
+    Drop(InstDropHint),
+}
+
+struct InstWitness {
+    const_i32: InstConst,
+    const_i64: InstConst,
+    const_f32: InstConst,
+    const_f64: InstConst,
+    drop: InstDrop,
+}
+
+fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitness {
+    let mut hint_const_i32 = InstConstHint::default();
+    let mut hint_const_i64 = InstConstHint::default();
+    let mut hint_const_f32 = InstConstHint::default();
+    let mut hint_const_f64 = InstConstHint::default();
+    let mut hint_drop = InstDropHint::default();
+    use crate::machine::InstProof::*;
+    match proof {
+        ConstI32(hint) => {
+            hint_const_i32 = hint;
+        }
+        ConstI64(hint) => {
+            hint_const_i64 = hint;
+        }
+        ConstF32(hint) => {
+            hint_const_f32 = hint;
+        }
+        ConstF64(hint) => {
+            hint_const_f64 = hint;
+        }
+        Drop(hint) => {
+            hint_drop = hint;
+        }
+    };
+    InstWitness {
+        const_i32: hint_const_i32.convert(cs.clone(), 0),
+        const_i64: hint_const_i64.convert(cs.clone(), 1),
+        const_f32: hint_const_f32.convert(cs.clone(), 2),
+        const_f64: hint_const_f64.convert(cs.clone(), 3),
+        drop: hint_drop.convert(cs.clone()),
+    }
+}
+
+fn select_machine(params: &Params, v: Vec<(MachineWithStack, MachineWithStack)>) -> (FpVar<Fr>, FpVar<Fr>) {
+    let mut valid = FpVar::constant(Fr::from(0));
+    let mut before = FpVar::constant(Fr::from(0));
+    let mut after = FpVar::constant(Fr::from(0));
+    for (be,af) in v {
+        let is_valid : FpVar<Fr> = From::from(af.valid.clone());
+        valid = valid + is_valid.clone();
+        let hash_be = hash_machine_with_stack(params, &be);
+        let hash_af = hash_machine_with_stack(params, &af);
+        before = before + hash_be*is_valid.clone();
+        after = after + hash_af*is_valid.clone();
+    }
+    valid.enforce_equal(&FpVar::constant(Fr::from(1))).unwrap();
+    (before, after)
+}
+
+fn make_proof(
+    cs: ConstraintSystemRef<Fr>,
+    params: &Params,
+    machine_hint: &MachineHint,
+    proof: InstProof,
+    inst: InstructionHint,
+    mole: &ModuleHint,
+    mod_proof: &Proof,
+    inst_proof: &Proof,
+    func_proof: &Proof
+) -> (FpVar<Fr>, FpVar<Fr>) {
+    let base_machine = machine_hint.convert(cs.clone());
+    let inst = convert_instruction(inst, cs.clone());
+    let mole = mole.convert(cs.clone());
+
+    let inst_hashed = hash_instruction(params, &inst);
+
+    // Base machine is enough for correctness of the instruction
+    prove_instr(
+        cs.clone(),
+        params,
+        &base_machine,
+        &mole,
+        inst_hashed,
+        mod_proof,
+        inst_proof,
+        func_proof,
+    );
+
+    let base_machine = intro_stack(&base_machine, &inst);
+    let witness = proof_to_witness(proof, cs.clone());
+    let const_i32 = witness.const_i32.execute(params, &base_machine);
+    let const_i64 = witness.const_i64.execute(params, &base_machine);
+    let const_f32 = witness.const_f32.execute(params, &base_machine);
+    let const_f64 = witness.const_f64.execute(params, &base_machine);
+    let drop = witness.drop.execute(params, &base_machine);
+
+    select_machine(params, vec![
+        const_i32,
+        const_i64,
+        const_f32,
+        const_f64,
+        drop,
+    ])
+}
+
