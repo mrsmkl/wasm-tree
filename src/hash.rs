@@ -224,6 +224,15 @@ pub struct Proof {
     pub selectors: Vec<bool>,
 }
 
+impl Proof {
+    pub fn default() -> Self {
+        Proof {
+            path: vec![],
+            selectors: vec![],
+        }
+    }
+}
+
 // gadget for variable length merkle tree
 // returns the root and index of first elem
 pub fn make_path(cs: ConstraintSystemRef<Fr>, num: usize, params : &Params, elem: FpVar<Fr>, proof: &Proof) -> (FpVar<Fr>, FpVar<Fr>) {

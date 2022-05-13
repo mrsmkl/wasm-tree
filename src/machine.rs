@@ -274,6 +274,7 @@ pub struct MachineWithStack {
 
     valid: Boolean<Fr>,
     inst: Instruction, // Must be the correct instruction
+    mole: Module,
 }
 
 pub fn hash_machine_with_stack(params: &Params, mach: &MachineWithStack) -> FpVar<Fr> {
@@ -296,7 +297,7 @@ pub fn elim_stack(params : &Params, mach: &MachineWithStack) -> Machine {
     }
 }
 
-fn intro_stack(mach: &Machine, inst: &Instruction) -> MachineWithStack {
+fn intro_stack(mach: &Machine, inst: &Instruction, mole: &Module) -> MachineWithStack {
     MachineWithStack {
         valueStack : Stack::based(mach.valueStack.clone()),
         internalStack : Stack::based(mach.internalStack.clone()),
@@ -311,6 +312,7 @@ fn intro_stack(mach: &Machine, inst: &Instruction) -> MachineWithStack {
 
         valid: Boolean::constant(true),
         inst: inst.clone(),
+        mole: mole.clone(),
     }
 }
 
@@ -336,6 +338,16 @@ trait Inst {
     fn code() -> u32;
     fn execute(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let (before, after) = self.execute_internal(params, mach);
+        let after = check_instruction(&after, Self::code());
+        (before, after)
+    }
+}
+
+trait InstCS {
+    fn execute_internal(&self, cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack);
+    fn code() -> u32;
+    fn execute(&self, cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let (before, after) = self.execute_internal(cs, params, mach);
         let after = check_instruction(&after, Self::code());
         (before, after)
     }
@@ -792,33 +804,95 @@ impl InstCallHint {
     }
 }
 
-/*
-pub fn execute_cross_module_call(params: &Params, mach: &MachineWithStack, inst: &Instruction, mole: &Module) -> MachineWithStack {
+pub fn execute_cross_module_call(params: &Params, mach: &MachineWithStack) -> MachineWithStack {
     let mut mach = mach.clone();
     mach.valueStack.push(hash_value(params, &create_return_value(&mach)));
     mach.valueStack.push(hash_value(params, &create_i32_value(mach.moduleIdx.clone())));
-    mach.valueStack.push(hash_value(params, &create_i32_value(mole.internalsOffset.clone())));
-    let data = inst.argumentData.to_bits_le().unwrap();
+    mach.valueStack.push(hash_value(params, &create_i32_value(mach.mole.internalsOffset.clone())));
+    let data = mach.inst.argumentData.to_bits_le().unwrap();
     mach.functionIdx = Boolean::le_bits_to_fp_var(&data[0..32]).unwrap();
     mach.moduleIdx = Boolean::le_bits_to_fp_var(&data[32..64]).unwrap();
     mach.functionPc = FpVar::constant(Fr::from(0));
     mach
 }
 
-pub fn execute_local_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, var: &ValueHint, frame: &StackFrame) -> MachineWithStack {
+struct InstCrossCall {
+}
+
+struct InstCrossCallHint {
+}
+
+impl Inst for InstCrossCall {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mach = mach.clone();
+        let before = mach.clone();
+        let after = execute_cross_module_call(params, &mach);
+        (before, after)
+    }
+}
+
+impl InstCrossCallHint {
+    pub fn default() -> Self {
+        InstCrossCallHint { }
+    }
+    pub fn convert(&self, _cs: &ConstraintSystemRef<Fr>) -> InstCrossCall {
+        InstCrossCall {  }
+    }
+}
+
+pub fn execute_local_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, proof: &Proof, var: FpVar<Fr>, frame: &StackFrame) -> MachineWithStack {
     let mut mach = mach.clone();
-    let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(var.hash(params))).unwrap());
     let (root, idx) = make_path(cs.clone(), 20, params, var.clone(), proof);
     mach.frameStack.peek().enforce_equal(&hash_stack_frame(params, frame)).unwrap();
     mach.valid = mach.valid.and(&root.is_eq(&frame.localsMerkleRoot).unwrap()).unwrap();
-    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&mach.inst.argumentData).unwrap()).unwrap();
     mach.valueStack.push(var);
     mach
 }
 
-pub fn execute_local_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, old_var: &ValueHint, frame: &StackFrame) -> MachineWithStack {
+struct InstLocalGet {
+    frame: StackFrame,
+    val: FpVar<Fr>,
+    proof: Proof,
+}
+
+struct InstLocalGetHint {
+    frame: StackFrameHint,
+    val: Fr,
+    proof: Proof,
+}
+
+impl InstCS for InstLocalGet {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.frameStack.push(hash_stack_frame(&params, &self.frame));
+        let before = mach.clone();
+        let after = execute_local_get(cs.clone(), params, &mach, &self.proof, self.val.clone(), &self.frame);
+        (before, after)
+    }
+}
+
+impl InstLocalGetHint {
+    pub fn default() -> Self {
+        InstLocalGetHint {
+            frame: StackFrameHint::default(),
+            val: Fr::from(0),
+            proof: Proof::default(),
+        }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstLocalGet {
+        InstLocalGet {
+            frame: self.frame.convert(cs),
+            val: witness(cs, &self.val),
+            proof: self.proof.clone(),
+        }
+    }
+}
+
+pub fn execute_local_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, old_var: &FpVar<Fr>, frame: &StackFrame) -> MachineWithStack {
     let mut mach = mach.clone();
-    let old_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(old_var.hash(params))).unwrap());
     let var = mach.valueStack.pop();
     let (root, idx) = make_path(cs.clone(), 20, params, old_var.clone(), proof);
     mach.frameStack.pop().enforce_equal(&hash_stack_frame(params, frame)).unwrap();
@@ -832,50 +906,212 @@ pub fn execute_local_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &Ma
     mach
 }
 
-pub fn execute_global_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, var: &ValueHint, mole: &Module) -> MachineWithStack {
+struct InstLocalSet {
+    frame: StackFrame,
+    val: FpVar<Fr>,
+    old_val: FpVar<Fr>,
+    proof: Proof,
+}
+
+struct InstLocalSetHint {
+    frame: StackFrameHint,
+    val: Fr,
+    old_val: Fr,
+    proof: Proof,
+}
+
+impl InstCS for InstLocalSet {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.frameStack.push(hash_stack_frame(&params, &self.frame));
+        mach.valueStack.push(self.old_val.clone());
+        let before = mach.clone();
+        let after = execute_local_get(cs.clone(), params, &mach, &self.proof, self.val.clone(), &self.frame);
+        (before, after)
+    }
+}
+
+impl InstLocalSetHint {
+    pub fn default() -> Self {
+        InstLocalSetHint {
+            frame: StackFrameHint::default(),
+            val: Fr::from(0),
+            old_val: Fr::from(0),
+            proof: Proof::default(),
+        }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstLocalSet {
+        InstLocalSet {
+            frame: self.frame.convert(cs),
+            val: witness(cs, &self.val),
+            old_val: witness(cs, &self.old_val),
+            proof: self.proof.clone(),
+        }
+    }
+}
+
+pub fn execute_global_get(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, proof: &Proof, var: FpVar<Fr>) -> MachineWithStack {
     let mut mach = mach.clone();
-    let var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(var.hash(params))).unwrap());
     let (root, idx) = make_path(cs.clone(), 20, params, var.clone(), proof);
-    mach.valid = mach.valid.and(&root.is_eq(&mole.globalsMerkleRoot).unwrap()).unwrap();
-    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&root.is_eq(&mach.mole.globalsMerkleRoot).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&mach.inst.argumentData).unwrap()).unwrap();
     mach.valueStack.push(var);
     mach
 }
 
-pub fn execute_global_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, proof: &Proof, old_var: &ValueHint, mole: &Module) -> (MachineWithStack, Module) {
-    let mut mach = mach.clone();
-    let old_var = FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(old_var.hash(params))).unwrap());
-    let var = mach.valueStack.pop();
-    let (root, idx) = make_path(cs.clone(), 20, params, old_var.clone(), proof);
-    mach.valid = mach.valid.and(&root.is_eq(&mole.globalsMerkleRoot).unwrap()).unwrap();
-    mach.valid = mach.valid.and(&idx.is_eq(&inst.argumentData).unwrap()).unwrap();
-    let (root2, idx2) = make_path(cs.clone(), 20, params, var.clone(), proof);
-    idx2.enforce_equal(&idx).unwrap();
-    let mut mole = mole.clone();
-    mole.globalsMerkleRoot = root2;
-    (mach, mole)
+struct InstGlobalGet {
+    val: FpVar<Fr>,
+    proof: Proof,
 }
 
-pub fn execute_init_frame(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, inst: &Instruction, returnPc: &ValueHint) -> MachineWithStack {
+struct InstGlobalGetHint {
+    val: Fr,
+    proof: Proof,
+}
+
+impl InstCS for InstGlobalGet {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mach = mach.clone();
+        let before = mach.clone();
+        let after = execute_global_get(cs.clone(), params, &mach, &self.proof, self.val.clone());
+        (before, after)
+    }
+}
+
+impl InstGlobalGetHint {
+    pub fn default() -> Self {
+        InstGlobalGetHint {
+            val: Fr::from(0),
+            proof: Proof::default(),
+        }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstGlobalGet {
+        InstGlobalGet {
+            val: witness(cs, &self.val),
+            proof: self.proof.clone(),
+        }
+    }
+}
+
+pub fn execute_global_set(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, proof: &Proof, old_var: &FpVar<Fr>) -> MachineWithStack {
+    let mut mach = mach.clone();
+    let var = mach.valueStack.pop();
+    let (root, idx) = make_path(cs.clone(), 20, params, old_var.clone(), proof);
+    mach.valid = mach.valid.and(&root.is_eq(&mach.mole.globalsMerkleRoot).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&idx.is_eq(&mach.inst.argumentData).unwrap()).unwrap();
+    let (root2, idx2) = make_path(cs.clone(), 20, params, var.clone(), proof);
+    idx2.enforce_equal(&idx).unwrap();
+    let mut mole = mach.mole.clone();
+    mole.globalsMerkleRoot = root2;
+    mach.mole = mole;
+    mach
+}
+
+struct InstGlobalSet {
+    val: FpVar<Fr>,
+    old_val: FpVar<Fr>,
+    proof: Proof,
+}
+
+struct InstGlobalSetHint {
+    val: Fr,
+    old_val: Fr,
+    proof: Proof,
+}
+
+impl InstCS for InstGlobalSet {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.valueStack.push(self.old_val.clone());
+        let before = mach.clone();
+        let after = execute_global_get(cs.clone(), params, &mach, &self.proof, self.val.clone());
+        (before, after)
+    }
+}
+
+impl InstGlobalSetHint {
+    pub fn default() -> Self {
+        InstGlobalSetHint {
+            val: Fr::from(0),
+            old_val: Fr::from(0),
+            proof: Proof::default(),
+        }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstGlobalSet {
+        InstGlobalSet {
+            val: witness(cs, &self.val),
+            old_val: witness(cs, &self.old_val),
+            proof: self.proof.clone(),
+        }
+    }
+}
+
+// TODO: set module after global set
+
+pub fn execute_init_frame(params: &Params, mach: &MachineWithStack, returnPc: &Value) -> MachineWithStack {
     let mut mach = mach.clone();
     let callerModuleInternals = mach.valueStack.pop();
     let callerModule = mach.valueStack.pop();
     let returnPcHash = mach.valueStack.pop();
-    let returnPc = Value {
-        value: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(returnPc.value))).unwrap()),
-        ty: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(returnPc.ty))).unwrap()),
-    };
     hash_value(params, &returnPc).enforce_equal(&returnPcHash).unwrap();
     let frame = StackFrame {
         callerModuleInternals,
         callerModule,
-        returnPc,
-        localsMerkleRoot: inst.argumentData.clone(),
+        returnPc: returnPc.clone(),
+        localsMerkleRoot: mach.inst.argumentData.clone(),
     };
     mach.frameStack.push(hash_stack_frame(params, &frame));
     mach
 }
-*/
+
+struct InstInitFrame {
+    val1: FpVar<Fr>,
+    val2: FpVar<Fr>,
+    val3: FpVar<Fr>,
+    return_pc: Value,
+}
+
+struct InstInitFrameHint {
+    val1: Fr,
+    val2: Fr,
+    val3: Fr,
+    return_pc: ValueHint,
+}
+
+impl Inst for InstInitFrame {
+    fn code() -> u32 { 234 }
+    fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
+        let mut mach = mach.clone();
+        mach.valueStack.push(self.val1.clone());
+        mach.valueStack.push(self.val2.clone());
+        mach.valueStack.push(self.val3.clone());
+        let before = mach.clone();
+        let after = execute_init_frame(params, &mach, &self.return_pc);
+        (before, after)
+    }
+}
+
+impl InstInitFrameHint {
+    pub fn default() -> Self {
+        InstInitFrameHint {
+            val1: Fr::from(0),
+            val2: Fr::from(0),
+            val3: Fr::from(0),
+            return_pc: ValueHint::default(),
+        }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstInitFrame {
+        InstInitFrame {
+            val1: witness(cs, &self.val1),
+            val2: witness(cs, &self.val2),
+            val3: witness(cs, &self.val3),
+            return_pc: self.return_pc.convert(cs),
+        }
+    }
+}
 
 /* Combining instructions, how should it work.
    Probably need a lot of witness variables...
@@ -894,6 +1130,12 @@ enum InstProof {
     Block(InstBlockHint),
     Return(InstReturnHint),
     Call(InstCallHint),
+    CrossCall(InstCrossCallHint),
+    LocalGet(InstLocalGetHint),
+    LocalSet(InstLocalSetHint),
+    GlobalGet(InstGlobalGetHint),
+    GlobalSet(InstGlobalSetHint),
+    InitFrame(InstInitFrameHint),
 }
 
 struct InstWitness {
@@ -908,6 +1150,12 @@ struct InstWitness {
     block: InstBlock,
     retvrn: InstReturn,
     call: InstCall,
+    cross_call: InstCrossCall,
+    local_get: InstLocalGet,
+    local_set: InstLocalSet,
+    global_get: InstGlobalGet,
+    global_set: InstGlobalSet,
+    init_frame: InstInitFrame,
 }
 
 fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitness {
@@ -922,6 +1170,12 @@ fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitnes
     let mut hint_block = InstBlockHint::default();
     let mut hint_return = InstReturnHint::default();
     let mut hint_call = InstCallHint::default();
+    let mut hint_cross_call = InstCrossCallHint::default();
+    let mut hint_local_get = InstLocalGetHint::default();
+    let mut hint_local_set = InstLocalSetHint::default();
+    let mut hint_global_get = InstGlobalGetHint::default();
+    let mut hint_global_set = InstGlobalSetHint::default();
+    let mut hint_init_frame = InstInitFrameHint::default();
     use crate::machine::InstProof::*;
     match proof {
         ConstI32(hint) => {
@@ -957,6 +1211,24 @@ fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitnes
         Call(hint) => {
             hint_call = hint;
         }
+        CrossCall(hint) => {
+            hint_cross_call = hint;
+        }
+        LocalGet(hint) => {
+            hint_local_get = hint;
+        }
+        LocalSet(hint) => {
+            hint_local_set = hint;
+        }
+        GlobalGet(hint) => {
+            hint_global_get = hint;
+        }
+        GlobalSet(hint) => {
+            hint_global_set = hint;
+        }
+        InitFrame(hint) => {
+            hint_init_frame = hint;
+        }
     };
     InstWitness {
         const_i32: hint_const_i32.convert(&cs, 0),
@@ -970,6 +1242,12 @@ fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitnes
         block: hint_block.convert(&cs),
         retvrn: hint_return.convert(&cs),
         call: hint_call.convert(&cs),
+        cross_call: hint_cross_call.convert(&cs),
+        local_get: hint_local_get.convert(&cs),
+        local_set: hint_local_set.convert(&cs),
+        global_get: hint_global_get.convert(&cs),
+        global_set: hint_global_set.convert(&cs),
+        init_frame: hint_init_frame.convert(&cs),
     }
 }
 
@@ -1018,7 +1296,7 @@ fn make_proof(
         func_proof,
     );
 
-    let base_machine = intro_stack(&base_machine, &inst);
+    let base_machine = intro_stack(&base_machine, &inst, &mole);
     let witness = proof_to_witness(proof, cs.clone());
     let const_i32 = witness.const_i32.execute(params, &base_machine);
     let const_i64 = witness.const_i64.execute(params, &base_machine);
@@ -1031,6 +1309,8 @@ fn make_proof(
     let block = witness.block.execute(params, &base_machine);
     let retvrn = witness.retvrn.execute(params, &base_machine);
     let call = witness.call.execute(params, &base_machine);
+    let cross_call = witness.cross_call.execute(params, &base_machine);
+    let local_get = witness.local_get.execute(cs.clone(), params, &base_machine);
 
     select_machine(params, vec![
         const_i32,
@@ -1044,6 +1324,8 @@ fn make_proof(
         block,
         retvrn,
         call,
+        cross_call,
+        local_get,
     ])
 }
 
