@@ -502,9 +502,19 @@ fn make_proof(
 
     let base_machine = intro_stack(&base_machine, &inst);
     let witness = proof_to_witness(proof, cs.clone());
-    let const_i32_before = witness.const_i32.execute(params, &base_machine);
+    let const_i32 = witness.const_i32.execute(params, &base_machine);
+    let const_i64 = witness.const_i64.execute(params, &base_machine);
+    let const_f32 = witness.const_f32.execute(params, &base_machine);
+    let const_f64 = witness.const_f64.execute(params, &base_machine);
+    let drop = witness.drop.execute(params, &base_machine);
 
-    select_machine(params, vec![const_i32_before])
+    select_machine(params, vec![
+        const_i32,
+        const_i64,
+        const_f32,
+        const_f64,
+        drop,
+    ])
 }
 
 /*
