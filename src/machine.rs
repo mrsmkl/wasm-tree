@@ -247,6 +247,10 @@ pub struct MachineWithStack {
     inst: Instruction, // Must be the correct instruction
 }
 
+pub fn hash_machine_with_stack(params: &Params, mach: &MachineWithStack) -> FpVar<Fr> {
+    hash_machine(params, &elim_stack(params, mach))
+}
+
 // There can be savings by sharing the hashing of stacks ...
 pub fn elim_stack(params : &Params, mach: &MachineWithStack) -> Machine {
     Machine {
@@ -291,7 +295,7 @@ pub fn check_instruction(mach: &MachineWithStack, expected: u32) -> MachineWithS
 pub fn execute_const(params: &Params, mach: &MachineWithStack, ty: u32) -> MachineWithStack {
     let mut mach = mach.clone();
     let v = Value {
-        value: inst.argumentData.clone(),
+        value: mach.inst.argumentData.clone(),
         ty: FpVar::constant(Fr::from(ty)),
     };
     mach.valueStack.push(hash_value(params, &v));
@@ -316,18 +320,12 @@ fn default_instruction() -> InstructionHint {
     }
 }
 
-/*
-fn convert_instr(&self, cs: ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
-    let inst = Instruction {
-        opcode: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.inst.opcode))).unwrap()),
-        argumentData: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.inst.argumentData))).unwrap()),
-    };
-    InstConst {
-        ty,
-        inst,
+fn convert_instruction(hint: InstructionHint, cs: ConstraintSystemRef<Fr>) -> Instruction {
+    Instruction {
+        opcode: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(hint.opcode))).unwrap()),
+        argumentData: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(hint.argumentData))).unwrap()),
     }
 }
-*/
 
 impl InstConstHint {
     fn default() -> Self {
@@ -472,6 +470,41 @@ fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitnes
         const_f64: hint_const_f64.convert(cs.clone(), 3),
         drop: hint_drop.convert(cs.clone()),
     }
+}
+
+fn select_machine(params: &Params, v: Vec<(MachineWithStack, MachineWithStack)>) -> (FpVar<Fr>, FpVar<Fr>) {
+    let mut valid = FpVar::constant(Fr::from(0));
+    let mut before = FpVar::constant(Fr::from(0));
+    let mut after = FpVar::constant(Fr::from(0));
+    for (be,af) in v {
+        let is_valid : FpVar<Fr> = From::from(af.valid.clone());
+        valid = valid + is_valid.clone();
+        let hash_be = hash_machine_with_stack(params, &be);
+        let hash_af = hash_machine_with_stack(params, &af);
+        before = before + hash_be*is_valid.clone();
+        after = after + hash_af*is_valid.clone();
+    }
+    valid.enforce_equal(&FpVar::constant(Fr::from(1))).unwrap();
+    (before, after)
+}
+
+fn make_proof(
+    cs: ConstraintSystemRef<Fr>,
+    params: &Params,
+    machine_hint: &MachineHint,
+    proof: InstProof,
+    inst: InstructionHint,
+) -> (FpVar<Fr>, FpVar<Fr>) {
+    let base_machine = machine_hint.convert(cs.clone());
+    let inst = convert_instruction(inst, cs.clone());
+
+    // Base machine is enough for correctness of the instruction
+
+    let base_machine = intro_stack(&base_machine, &inst);
+    let witness = proof_to_witness(proof, cs.clone());
+    let const_i32_before = witness.const_i32.execute(params, &base_machine);
+
+    select_machine(params, vec![const_i32_before])
 }
 
 /*
