@@ -168,6 +168,18 @@ impl ValueHint {
             Fr::from(self.ty.clone()),
         ])
     }
+    fn default() -> Self {
+        ValueHint {
+            value: 0,
+            ty: 0,
+        }
+    }
+    fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> Value {
+        Value {
+            value: witness(cs, &Fr::from(self.value)),
+            ty: witness(cs, &Fr::from(self.ty)),
+        }
+    }
 }
 
 fn hash_value(params: &Params, inst: &Value) -> FpVar<Fr> {
@@ -354,7 +366,7 @@ impl InstConstHint {
     fn default() -> Self {
         InstConstHint { }
     }
-    fn convert(&self, _cs: ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
+    fn convert(&self, _cs: &ConstraintSystemRef<Fr>, ty: u32) -> InstConst {
         InstConst {
             ty,
         }
@@ -430,7 +442,7 @@ impl InstDropHint {
             val: 0,
         }
     }
-    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstDrop {
+    fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstDrop {
         InstDrop {
             val: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.val))).unwrap()),
         }
@@ -490,7 +502,7 @@ impl InstSelectHint {
             val3: Fr::from(0),
         }
     }
-    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstSelect {
+    fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstSelect {
         InstSelect {
             val1: witness(&cs, &self.val1),
             val2: witness(&cs, &self.val2),
@@ -527,7 +539,7 @@ impl InstBlockHint {
         InstBlockHint {
         }
     }
-    fn convert(&self, _cs: ConstraintSystemRef<Fr>) -> InstBlock {
+    fn convert(&self, _cs: &ConstraintSystemRef<Fr>) -> InstBlock {
         InstBlock {
         }
     }
@@ -564,7 +576,7 @@ impl InstBranchHint {
             val: Fr::from(0),
         }
     }
-    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstBranch {
+    fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstBranch {
         InstBranch {
             val: witness(&cs, &self.val),
         }
@@ -619,7 +631,7 @@ impl InstBranchIfHint {
             block: Fr::from(0),
         }
     }
-    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> InstBranchIf {
+    fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstBranchIf {
         InstBranchIf {
             val1: witness(&cs, &self.val1),
             val2: witness(&cs, &self.val2),
@@ -627,8 +639,6 @@ impl InstBranchIfHint {
         }
     }
 }
-
-/*
 
 #[derive(Debug, Clone)]
 pub struct StackFrame {
@@ -638,6 +648,14 @@ pub struct StackFrame {
     callerModuleInternals: FpVar<Fr>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StackFrameHint {
+    returnPc: ValueHint,
+    localsMerkleRoot: Fr,
+    callerModule: Fr,
+    callerModuleInternals: Fr,
+}
+
 impl StackFrame {
     fn default() -> Self {
         StackFrame {
@@ -645,6 +663,25 @@ impl StackFrame {
             localsMerkleRoot: FpVar::constant(Fr::from(0)),
             callerModule: FpVar::constant(Fr::from(0)),
             callerModuleInternals: FpVar::constant(Fr::from(0)),
+        }
+    }
+}
+
+impl StackFrameHint {
+    fn default() -> Self {
+        StackFrameHint {
+            returnPc: ValueHint::default(),
+            localsMerkleRoot: Fr::from(0),
+            callerModule: Fr::from(0),
+            callerModuleInternals: Fr::from(0),
+        }
+    }
+    fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> StackFrame {
+        StackFrame {
+            returnPc: self.returnPc.convert(cs),
+            localsMerkleRoot: witness(cs, &self.localsMerkleRoot),
+            callerModule: witness(cs, &self.callerModule),
+            callerModuleInternals: witness(cs, &self.callerModuleInternals),
         }
     }
 }
@@ -692,7 +729,10 @@ impl Inst for InstReturn {
 
 impl InstReturnHint {
     pub fn default() -> Self {
-        InstReturnHint { frame: StackFrame::default() }
+        InstReturnHint { frame: StackFrameHint::default() }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstReturn {
+        InstReturn { frame: self.frame.convert(cs) }
     }
 }
 
@@ -712,24 +752,27 @@ fn create_i32_value(value: FpVar<Fr>) -> Value {
     Value { value, ty: FpVar::constant(Fr::from(I32_TYPE)) }
 }
 
-pub fn execute_call(params: &Params, mach: &MachineWithStack, frame: &StackFrame, inst: &Instruction) -> MachineWithStack {
+pub fn execute_call(params: &Params, mach: &MachineWithStack, frame: &StackFrame) -> MachineWithStack {
     let mut mach = mach.clone();
     mach.valueStack.push(hash_value(params, &create_return_value(&mach)));
     mach.frameStack.peek().enforce_equal(&hash_stack_frame(params, frame)).unwrap();
     mach.valueStack.push(hash_value(params, &create_i32_value(frame.callerModule.clone())));
     mach.valueStack.push(hash_value(params, &create_i32_value(frame.callerModuleInternals.clone())));
-    mach.functionIdx = inst.argumentData.clone();
-    enforce_i32(inst.argumentData.clone());
+    mach.functionIdx = mach.inst.argumentData.clone();
+    enforce_i32(mach.inst.argumentData.clone());
     mach.functionPc = FpVar::constant(Fr::from(0));
     mach
 }
 
-struct InstCallHint {
+struct InstCall {
     frame: StackFrame,
-
 }
 
-impl InstHint for InstCallHint {
+struct InstCallHint {
+    frame: StackFrameHint,
+}
+
+impl Inst for InstCall {
     fn code() -> u32 { 234 }
     fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
@@ -742,11 +785,14 @@ impl InstHint for InstCallHint {
 
 impl InstCallHint {
     pub fn default() -> Self {
-        InstCallHint { frame: StackFrame::default() }
+        InstCallHint { frame: StackFrameHint::default() }
+    }
+    pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstCall {
+        InstCall { frame: self.frame.convert(cs) }
     }
 }
 
-
+/*
 pub fn execute_cross_module_call(params: &Params, mach: &MachineWithStack, inst: &Instruction, mole: &Module) -> MachineWithStack {
     let mut mach = mach.clone();
     mach.valueStack.push(hash_value(params, &create_return_value(&mach)));
@@ -842,6 +888,12 @@ enum InstProof {
     ConstF32(InstConstHint),
     ConstF64(InstConstHint),
     Drop(InstDropHint),
+    Select(InstSelectHint),
+    Branch(InstBranchHint),
+    BranchIf(InstBranchIfHint),
+    Block(InstBlockHint),
+    Return(InstReturnHint),
+    Call(InstCallHint),
 }
 
 struct InstWitness {
@@ -850,6 +902,12 @@ struct InstWitness {
     const_f32: InstConst,
     const_f64: InstConst,
     drop: InstDrop,
+    select: InstSelect,
+    branch: InstBranch,
+    branch_if: InstBranchIf,
+    block: InstBlock,
+    retvrn: InstReturn,
+    call: InstCall,
 }
 
 fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitness {
@@ -858,6 +916,12 @@ fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitnes
     let mut hint_const_f32 = InstConstHint::default();
     let mut hint_const_f64 = InstConstHint::default();
     let mut hint_drop = InstDropHint::default();
+    let mut hint_select = InstSelectHint::default();
+    let mut hint_branch = InstBranchHint::default();
+    let mut hint_branch_if = InstBranchIfHint::default();
+    let mut hint_block = InstBlockHint::default();
+    let mut hint_return = InstReturnHint::default();
+    let mut hint_call = InstCallHint::default();
     use crate::machine::InstProof::*;
     match proof {
         ConstI32(hint) => {
@@ -875,13 +939,37 @@ fn proof_to_witness(proof: InstProof, cs: ConstraintSystemRef<Fr>) -> InstWitnes
         Drop(hint) => {
             hint_drop = hint;
         }
+        Select(hint) => {
+            hint_select = hint;
+        }
+        Branch(hint) => {
+            hint_branch = hint;
+        }
+        BranchIf(hint) => {
+            hint_branch_if = hint;
+        }
+        Block(hint) => {
+            hint_block = hint;
+        }
+        Return(hint) => {
+            hint_return = hint;
+        }
+        Call(hint) => {
+            hint_call = hint;
+        }
     };
     InstWitness {
-        const_i32: hint_const_i32.convert(cs.clone(), 0),
-        const_i64: hint_const_i64.convert(cs.clone(), 1),
-        const_f32: hint_const_f32.convert(cs.clone(), 2),
-        const_f64: hint_const_f64.convert(cs.clone(), 3),
-        drop: hint_drop.convert(cs.clone()),
+        const_i32: hint_const_i32.convert(&cs, 0),
+        const_i64: hint_const_i64.convert(&cs, 1),
+        const_f32: hint_const_f32.convert(&cs, 2),
+        const_f64: hint_const_f64.convert(&cs, 3),
+        drop: hint_drop.convert(&cs),
+        select: hint_select.convert(&cs),
+        branch: hint_branch.convert(&cs),
+        branch_if: hint_branch_if.convert(&cs),
+        block: hint_block.convert(&cs),
+        retvrn: hint_return.convert(&cs),
+        call: hint_call.convert(&cs),
     }
 }
 
@@ -937,6 +1025,12 @@ fn make_proof(
     let const_f32 = witness.const_f32.execute(params, &base_machine);
     let const_f64 = witness.const_f64.execute(params, &base_machine);
     let drop = witness.drop.execute(params, &base_machine);
+    let select = witness.select.execute(params, &base_machine);
+    let branch = witness.branch.execute(params, &base_machine);
+    let branch_if = witness.branch_if.execute(params, &base_machine);
+    let block = witness.block.execute(params, &base_machine);
+    let retvrn = witness.retvrn.execute(params, &base_machine);
+    let call = witness.call.execute(params, &base_machine);
 
     select_machine(params, vec![
         const_i32,
@@ -944,6 +1038,12 @@ fn make_proof(
         const_f32,
         const_f64,
         drop,
+        select,
+        branch,
+        branch_if,
+        block,
+        retvrn,
+        call,
     ])
 }
 
