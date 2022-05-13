@@ -323,6 +323,23 @@ pub fn check_instruction(mach: &MachineWithStack, expected: u32) -> MachineWithS
     mach
 }
 
+pub fn change_module(cs: ConstraintSystemRef<Fr>, params: &Params, mach: &MachineWithStack, old_mole: &Module, mod_proof: &Proof) -> MachineWithStack {
+    let mole_hash = hash_module(params, &mach.mole);
+    let (mole_root, mole_idx) = make_path(cs.clone(), 16, params, mole_hash, mod_proof);
+
+    let old_mole_hash = hash_module(params, &old_mole);
+    let (old_mole_root, old_mole_idx) = make_path(cs.clone(), 16, params, old_mole_hash, mod_proof);
+    mole_root.enforce_equal(&mach.modulesRoot).unwrap();
+    mole_idx.enforce_equal(&mach.moduleIdx).unwrap();
+
+    let mut mach = mach.clone();
+    mach.valid = mach.valid.and(&old_mole_idx.is_eq(&mach.moduleIdx).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&mole_idx.is_eq(&mach.moduleIdx).unwrap()).unwrap();
+    mach.valid = mach.valid.and(&old_mole_root.is_eq(&mach.modulesRoot).unwrap()).unwrap();
+    mach.modulesRoot = mole_root;
+    mach
+}
+
 pub fn execute_const(params: &Params, mach: &MachineWithStack, ty: u32) -> MachineWithStack {
     let mut mach = mach.clone();
     let v = Value {
@@ -1013,12 +1030,14 @@ struct InstGlobalSet {
     val: FpVar<Fr>,
     old_val: FpVar<Fr>,
     proof: Proof,
+    mod_proof: Proof,
 }
 
 struct InstGlobalSetHint {
     val: Fr,
     old_val: Fr,
     proof: Proof,
+    mod_proof: Proof,
 }
 
 impl InstCS for InstGlobalSet {
@@ -1028,6 +1047,7 @@ impl InstCS for InstGlobalSet {
         mach.valueStack.push(self.old_val.clone());
         let before = mach.clone();
         let after = execute_global_get(cs.clone(), params, &mach, &self.proof, self.val.clone());
+        let after = change_module(cs.clone(), params, &after, &before.mole, &self.mod_proof);
         (before, after)
     }
 }
@@ -1038,6 +1058,7 @@ impl InstGlobalSetHint {
             val: Fr::from(0),
             old_val: Fr::from(0),
             proof: Proof::default(),
+            mod_proof: Proof::default(),
         }
     }
     pub fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstGlobalSet {
@@ -1045,6 +1066,7 @@ impl InstGlobalSetHint {
             val: witness(cs, &self.val),
             old_val: witness(cs, &self.old_val),
             proof: self.proof.clone(),
+            mod_proof: self.mod_proof.clone(),
         }
     }
 }
@@ -1314,7 +1336,7 @@ fn make_proof(
     let local_set = witness.local_set.execute(cs.clone(), params, &base_machine);
     let global_get = witness.global_get.execute(cs.clone(), params, &base_machine);
     let global_set = witness.global_set.execute(cs.clone(), params, &base_machine);
-    let init_frame = witness.init_frame.execute(cs.clone(), params, &base_machine);
+    let init_frame = witness.init_frame.execute(params, &base_machine);
 
     select_machine(params, vec![
         const_i32,
