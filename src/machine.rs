@@ -1311,6 +1311,10 @@ fn make_proof(
     let call = witness.call.execute(params, &base_machine);
     let cross_call = witness.cross_call.execute(params, &base_machine);
     let local_get = witness.local_get.execute(cs.clone(), params, &base_machine);
+    let local_set = witness.local_set.execute(cs.clone(), params, &base_machine);
+    let global_get = witness.global_get.execute(cs.clone(), params, &base_machine);
+    let global_set = witness.global_set.execute(cs.clone(), params, &base_machine);
+    let init_frame = witness.init_frame.execute(cs.clone(), params, &base_machine);
 
     select_machine(params, vec![
         const_i32,
@@ -1326,6 +1330,10 @@ fn make_proof(
         call,
         cross_call,
         local_get,
+        local_set,
+        global_get,
+        global_set,
+        init_frame,
     ])
 }
 
