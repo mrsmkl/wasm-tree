@@ -52,6 +52,19 @@ fn witness(cs: &ConstraintSystemRef<Fr>, default: &Fr) -> FpVar<Fr> {
 }
 
 impl MachineHint {
+    fn default() -> Self {
+        MachineHint {
+            valueStack: Fr::from(0),
+            internalStack: Fr::from(0),
+            blockStack: Fr::from(0),
+            frameStack: Fr::from(0),
+            globalStateHash: Fr::from(0),
+            moduleIdx: Fr::from(0),
+            functionIdx: Fr::from(0),
+            functionPc: Fr::from(0),
+            modulesRoot: Fr::from(0),
+        }
+    }
     fn convert(&self, cs: ConstraintSystemRef<Fr>) -> Machine {
         Machine {
             valueStack : witness(&cs, &self.valueStack),
@@ -100,6 +113,15 @@ pub struct ModuleHint {
 }
 
 impl ModuleHint {
+    fn default() -> Self {
+        ModuleHint {
+            globalsMerkleRoot: Fr::from(0),
+            moduleMemory: Fr::from(0),
+            tablesMerkleRoot: Fr::from(0),
+            functionsMerkleRoot: Fr::from(0),
+            internalsOffset: Fr::from(0),
+        }
+    }
     fn convert(&self, cs: ConstraintSystemRef<Fr>) -> Module {
         Module {
             globalsMerkleRoot: witness(&cs, &self.globalsMerkleRoot),
@@ -178,6 +200,22 @@ impl ValueHint {
         Value {
             value: witness(cs, &Fr::from(self.value)),
             ty: witness(cs, &Fr::from(self.ty)),
+        }
+    }
+}
+
+impl InstructionHint {
+    fn default() -> InstructionHint {
+        InstructionHint {
+            opcode: 0,
+            argumentData: 0,
+        }
+    }
+    
+    fn convert(&self, cs: ConstraintSystemRef<Fr>) -> Instruction {
+        Instruction {
+            opcode: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.opcode))).unwrap()),
+            argumentData: FpVar::Var(AllocatedFp::<Fr>::new_witness(cs.clone(), || Ok(Fr::from(self.argumentData))).unwrap()),
         }
     }
 }
@@ -558,7 +596,7 @@ impl Inst for InstBlock {
     fn code() -> u32 { 234 }
     fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let before = mach.clone();
-        let after = execute_drop(params, &mach);
+        let after = execute_block(params, &mach);
         (before, after)
     }
 }
@@ -582,10 +620,12 @@ pub fn execute_branch(_params: &Params, mach: &MachineWithStack) -> MachineWithS
 
 struct InstBranch {
     val: FpVar<Fr>,
+    block: FpVar<Fr>,
 }
 
 struct InstBranchHint {
     val: Fr,
+    block: Fr,
 }
 
 impl Inst for InstBranch {
@@ -593,6 +633,7 @@ impl Inst for InstBranch {
     fn execute_internal(&self, params: &Params, mach: &MachineWithStack) -> (MachineWithStack, MachineWithStack) {
         let mut mach = mach.clone();
         mach.valueStack.push(self.val.clone());
+        mach.blockStack.push(self.block.clone());
         let before = mach.clone();
         let after = execute_branch(params, &mach);
         (before, after)
@@ -603,11 +644,13 @@ impl InstBranchHint {
     pub fn default() -> Self {
         InstBranchHint {
             val: Fr::from(0),
+            block: Fr::from(0),
         }
     }
     fn convert(&self, cs: &ConstraintSystemRef<Fr>) -> InstBranch {
         InstBranch {
             val: witness(&cs, &self.val),
+            block: witness(&cs, &self.block),
         }
     }
 }
@@ -768,8 +811,8 @@ impl InstReturnHint {
 fn create_return_value(mach: &MachineWithStack) -> Value {
     let value =
         mach.functionPc.clone() +
-        mach.functionIdx.clone() * FpVar::constant(Fr::from(1 << 32)) +
-        mach.moduleIdx.clone() * FpVar::constant(Fr::from(1 << 64));
+        mach.functionIdx.clone() * FpVar::constant(Fr::from(1u128 << 32)) +
+        mach.moduleIdx.clone() * FpVar::constant(Fr::from(1u128 << 64));
     Value {
         value,
         ty: FpVar::constant(Fr::from(INTERNAL_TYPE_REF)),
@@ -1357,5 +1400,29 @@ fn make_proof(
         global_set,
         init_frame,
     ])
+}
+
+pub fn test() {
+    use ark_std::test_rng;
+    use crate::InnerSNARK;
+    use ark_crypto_primitives::CircuitSpecificSetupSNARK;
+    use ark_crypto_primitives::SNARK;
+    use ark_relations::r1cs::ConstraintSystem;
+    use crate::hash::generate_params;
+    let cs_sys = ConstraintSystem::<Fr>::new();
+    let cs = ConstraintSystemRef::new(cs_sys);
+    let params = generate_params();
+    let (_before, _after) = make_proof(
+        cs.clone(),
+        &params,
+        &MachineHint::default(),
+        InstProof::Drop(InstDropHint::default()),
+        InstructionHint::default(),
+        &ModuleHint::default(),
+        &Proof::default(),
+        &Proof::default(),
+        &Proof::default(),
+    );
+    println!("constraints {}", cs.num_constraints());
 }
 
